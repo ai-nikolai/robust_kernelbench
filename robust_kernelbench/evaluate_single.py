@@ -36,24 +36,24 @@ from typing import Any
 import multiprocessing as mp
 from multiprocessing import Pool,Lock
 
-from utils import (
+from utils.utils import (
     get_folder_path,
     get_file_name,
     get_problem_id_from_file_name
 )
 
-from utils_data import (
+from utils.utils_data import (
     CompileResult,
     KernelExecResult
 )
 
-from utils_evaluate_common import (
+from utils.utils_evaluate_common import (
     register_and_format_exception,
     format_exception_string,
     OutputCapture
 )
 
-from utils_compile import (
+from utils.utils_compile import (
     load_original_model_and_inputs,
     load_custom_model,
     # compile_and_get_output,

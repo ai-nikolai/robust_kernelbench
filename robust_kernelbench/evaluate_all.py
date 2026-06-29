@@ -35,7 +35,7 @@ import traceback
 from typing import Any
 
 
-from utils import (
+from utils.utils import (
     get_folder_path,
     get_file_name,
     get_problem_id_from_file_name

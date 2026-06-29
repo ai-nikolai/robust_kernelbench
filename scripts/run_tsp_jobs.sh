@@ -67,7 +67,7 @@ COMPILE=1
 EVAL=1
 
 USE_ONLINE=0
-USE_ONLINE=1
+# USE_ONLINE=1
 
 # VERSION="V8_2_1_test"
 VERSION="V8_3"
@@ -93,17 +93,22 @@ VERSION="V8_3"
 
 
 # FINAL MODELS
+# models=(
+#     "deepseek/deepseek-v3.1-terminus"
+#     "mistralai/devstral-2512"
+#     "openai/gpt-oss-120b"
+# )
+
 models=(
-    "deepseek/deepseek-v3.1-terminus"
-    "mistralai/devstral-2512"
-    "openai/gpt-oss-120b"
+    "Qwen/Qwen3-0.6B"
 )
 
 jobs=(
-    "1 12 single_stage"
-    "1 13 multi_stage"
-    "1 22 single_stage"
-    "1 23 multi_stage"
+    "1 1 single_stage"
+    # "1 12 single_stage"
+    # "1 13 multi_stage"
+    # "1 22 single_stage"
+    # "1 23 multi_stage"
 )
 
 
@@ -138,7 +143,7 @@ jobs=(
 # fi
 
 NUM_ITEMS=""
-# NUM_ITEMS=2
+NUM_ITEMS=1
 
 # Iterate through each tuple
 for model in "${models[@]}"; do
@@ -155,7 +160,7 @@ for model in "${models[@]}"; do
         read -r previous new prompt <<< "$tuple"
 
         # Call another bash script with the tuple components as arguments
-        ./scripts/local_tts_v2.sh "$previous" "$new" "$prompt" "$EXPERIMENT_NAME" "$concrete_model" "$INFERENCE" "$COMPILE" "$EVAL" "$LEVEL" "$VERSION" "$USE_ONLINE" $NUM_ITEMS
+        ./scripts/generate_tsp_job.sh "$previous" "$new" "$prompt" "$EXPERIMENT_NAME" "$concrete_model" "$INFERENCE" "$COMPILE" "$EVAL" "$LEVEL" "$VERSION" "$USE_ONLINE" $NUM_ITEMS
         
         sleep 0.5
     done

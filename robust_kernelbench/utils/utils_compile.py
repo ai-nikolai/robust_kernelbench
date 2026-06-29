@@ -5,12 +5,12 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from utils_data import (
+from .utils_data import (
     CompileResult,
     KernelExecResult
 )
 
-from utils_evaluate_common import (
+from .utils_evaluate_common import (
     exec_and_get_output,
     compile_and_get_output,
     format_exception_string

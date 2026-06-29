@@ -6,7 +6,7 @@ from datasets import Dataset
 
 from pprint import pprint
 
-from utils import (
+from .utils import (
     get_folder_path,
     get_file_name
 )

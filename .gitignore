@@ -1,11 +1,15 @@
 env_*
 
+exp_db.csv
+
 generations_*
 evaluations_*
 compilations.csv
 evaluations.csv
 
 scratch/*
+
+job_scripts/*
 
 __pycache__
 experiments_backup/

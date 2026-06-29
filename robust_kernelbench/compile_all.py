@@ -39,7 +39,7 @@ import traceback
 from typing import Any
 
 
-from utils import (
+from utils.utils import (
     get_folder_path,
     get_file_name,
     get_problem_id_from_file_name
@@ -53,11 +53,11 @@ from evaluate_single import (
     
 )
 
-from utils_compile import (
+from utils.utils_compile import (
     run_compilation
 )
 
-from utils_data import (
+from utils.utils_data import (
     CompileResult,
     KernelExecResult
 )

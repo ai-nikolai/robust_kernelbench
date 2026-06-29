@@ -185,7 +185,7 @@ for model in "${models[@]}"; do
         read -r previous new prompt <<< "$tuple"
 
         # Call another bash script with the tuple components as arguments
-        ./scripts/ukp_tts_v2.sh "$previous" "$new" "$prompt" "$EXPERIMENT_NAME" "$concrete_model" "$INFERENCE" "$COMPILE" "$EVAL" "$LEVEL" "$VERSION" "$USE_ONLINE" $NUM_ITEMS
+        ./scripts/generate_slurm_job.sh "$previous" "$new" "$prompt" "$EXPERIMENT_NAME" "$concrete_model" "$INFERENCE" "$COMPILE" "$EVAL" "$LEVEL" "$VERSION" "$USE_ONLINE" $NUM_ITEMS
         
         sleep 0.5
     done

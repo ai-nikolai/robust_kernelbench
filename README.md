@@ -9,9 +9,10 @@ This repo is also for the paper: "FIL Hypothesis"... (Citation coming soon).
 1. Installation
 ```bash
 # conda create -n env_robust_kernelbench python=3.11
+# conda activate env_robust_kernelbench
 pip3 install -r requirements.txt
 conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this. 
-# conda install -c conda-forge gxx_linux-64 gcc_linux-64 make
+# conda install -c conda-forge gxx_linux-64 gcc_linux-64 make #you don't really need this, but it should resolve the cxx warning.
 # export PIP_CACHE_DIR=/workspace/cache
 # export TMPDIR=/workspace/cache
 ```
@@ -19,7 +20,7 @@ conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you n
 ## Running the code:
 1. End-2-end scripts: (1. Generate Kernels, 2. Compile Kernels (distributed), 3. Evaluate Kernels)
 ```bash
-bash ./scripts/run_tsp_jobs.sh #local serverr (see task-spooler below)
+bash ./scripts/run_tsp_jobs.sh #local server (see task-spooler below)
 # OR
 bash ./scripts/run_slurm_jobs.sh
 ```
