@@ -1,3 +1,18 @@
+"""
+USAGE:
+
+###############################
+# FINAL ANALYSIS
+python3 analysis/run_analysis_summary_clean.py --experiment V8_3 --trial1 1
+
+
+python3 analysis/run_analysis_summary_clean.py --experiment V8_3 --trial1 2 --trial2 3 --base_experiments_folder experiments_backup2
+python3 analysis/run_analysis_summary_clean.py  --experiment V8_3 --trial1 12 --trial2 13 --base_experiments_folder experiments_backup2
+python3 analysis/run_analysis_summary_clean.py  --experiment V8_3 --trial1 22 --trial2 23 --base_experiments_folder experiments_backup2
+
+
+"""
+
 import os
 import pandas as pd
 import json
@@ -5,10 +20,8 @@ from pprint import pprint
 
 from tqdm import tqdm
 
-from ..utils.utils import (
+from utils import (
     get_folder_path,
-    # get_file_name,
-    # get_problem_id_from_file_name
 )
 
 # TODO
@@ -385,16 +398,3 @@ if __name__=="__main__":
         print(f"Total problems compared: {len(df_comparison)}")
         print(f"\nFirst few rows:")
         print(df_comparison.head())
-
-
-"""
-USAGE:
-
-###############################
-# FINAL ANALYSIS
-python3 robust_kernelbench/analysis/run_analysis_summary_clean.py --experiment V8_3 --trial1 2 --trial2 3 --base_experiments_folder experiments_backup2
-python3 robust_kernelbench/analysis/run_analysis_summary_clean.py  --experiment V8_3 --trial1 12 --trial2 13 --base_experiments_folder experiments_backup2
-python3 robust_kernelbench/analysis/run_analysis_summary_clean.py  --experiment V8_3 --trial1 22 --trial2 23 --base_experiments_folder experiments_backup2
-
-
-"""

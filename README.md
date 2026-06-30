@@ -102,6 +102,18 @@ source ~/miniconda3/etc/profile.d/conda.sh
 # conda activate env_robust_kernelbench #it was created using `conda create -n env_robust_kernelbench python=3.11
 ```
 
+## Slurm:
+```bash
+salloc --partition=interactive-gpu --gres=gpu:h200:2 --time=01:00:00 --ntasks=2
+srun --jobid=100428 --pty bash
+```
+
 
 ---
 ## (C) Nikolai Rozanov - 2025 - Present
+
+
+<!-- 
+git config --global user.name "Nikolai Rozanov"
+git config --global user.email "nikolai.rozanov@gmail.com" 
+-->

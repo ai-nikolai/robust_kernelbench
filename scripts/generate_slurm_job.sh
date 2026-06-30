@@ -1,6 +1,13 @@
 #!/bin/bash
 # LOCAL_HOME="/ukp-storage-1/rozanov"
-LOCAL_HOME="/storage/ukp/work/rozanov"
+# LOCAL_HOME="/storage/ukp/work/rozanov"
+LOCAL_HOME="~"
+
+QUEUE_NAME=""
+PARTITION_NAME=""
+
+#SBATCH -p gpu
+#SBATCH -q gpu-small
 
 
 NUM_GPUS=2
@@ -152,21 +159,25 @@ if [ -n "${NUM_GPUS}" ];then
     ARGS="$ARGS --tensor_parallel_size ${NUM_GPUS}"
 fi
 
+
+# SBATCH COMMANDS WE DO NOT NEED FOR NOW
+#SBATCH --constraint="gpu_mem:${GPU_MEM}" #this is specific to run GPU_MEM GB gpus...
+#SBATCH --mem=64G #128G is not working #requesting more than 128 leads to an error.
+#SBATCH -q ${QUEUE_NAME}
+
 cat << EOF > "$output_folder/$output_file"
 #!/bin/bash
 #SBATCH -J ${JOB_NAME}
 #SBATCH -N 1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:${NUM_GPUS}
-#SBATCH --constraint="gpu_mem:${GPU_MEM}" #this is specific to run GPU_MEM GB gpus...
 
 #SBATCH --cpus-per-task=16 #this should be the number of cores. So I guess we can request 32
-#SBATCH --mem=64G #128G is not working #requesting more than 128 leads to an error.
 
 #SBATCH -t $WALLTIME
 
-#SBATCH -p gpu
-#SBATCH -q gpu-small
+#SBATCH -p ${PARTITION_NAME}
+
 
 #SBATCH -o ${LOCAL_HOME}/logs/${JOB_NAME}/run_%j_${SHORT_MODEL_NAME}_${PROMPT_TYPE}_%N_%t_${EXPERIMENT_NAME}.log
 #SBATCH -e ${LOCAL_HOME}/logs/${JOB_NAME}/run_%j_${SHORT_MODEL_NAME}_${PROMPT_TYPE}_%N_%t_${EXPERIMENT_NAME}.log

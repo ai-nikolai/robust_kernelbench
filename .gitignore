@@ -13,6 +13,8 @@ job_scripts/*
 
 experiments/*
 
+analysis_output/*
+
 __pycache__
 experiments_backup/
 experiments_backup2/
