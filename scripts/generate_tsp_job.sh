@@ -1,6 +1,7 @@
 #!/bin/bash
 
 LOCAL_HOME="/workspace"
+NUM_GPUS=2
 
 PREVIOUS_TRIAL=${1:-1}
 NEW_TRIAL=${2:-1}

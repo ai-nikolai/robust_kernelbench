@@ -100,7 +100,8 @@ VERSION="V8_3"
 # )
 
 models=(
-    "Qwen/Qwen3-0.6B"
+    # "Qwen/Qwen3-5.6B"
+    "Qwen/Qwen3-Coder-Next"
 )
 
 jobs=(

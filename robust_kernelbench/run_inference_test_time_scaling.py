@@ -9,14 +9,33 @@ from tqdm import tqdm
 
 import statistics
 
-# AI Related..
-from datasets import load_from_disk, load_dataset
-from vllm import LLM, SamplingParams
-from vllm.lora.request import LoRARequest
 
-import torch
+# import multiprocessing as mp
 
-from transformers import AutoTokenizer
+
+# VLLM IMPORTS NEED TO BE IN __MAIN__ (see below)
+# from vllm import LLM, SamplingParams
+# from vllm.lora.request import LoRARequest
+
+if __name__=="__main__":
+    # vllm imports here works (all CUDA related imports need to go here...)
+    # https://docs.vllm.ai/en/latest/usage/troubleshooting/#runtimeerror-exception
+
+    import torch
+
+    from vllm import LLM, SamplingParams
+    from vllm.lora.request import LoRARequest
+
+    from transformers import AutoTokenizer
+
+    from datasets import load_from_disk, load_dataset
+
+    os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+# import torch
+# from transformers import AutoTokenizer
+# from datasets import load_from_disk, load_dataset
+
 
 import gc
 
