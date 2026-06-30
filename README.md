@@ -46,6 +46,17 @@ python3 robust_kernelbench/compile_all.py --experiment_name exp_local_1 --trial 
 python3 robust_kernelbench/evaluate_all.py --experiment_name "exp_local_1" --trial 1
 ```
 
+
+## Running the Analysis:
+1. Installation:
+```bash
+pip3 install -r requirements_analysis.txt
+```
+
+2. Running:
+See `README_ANALYSIS.md`
+
+
 ---
 ## Task Spooler (local server SLURM alternative)
 

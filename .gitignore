@@ -11,6 +11,8 @@ scratch/*
 
 job_scripts/*
 
+experiments/*
+
 __pycache__
 experiments_backup/
 experiments_backup2/
