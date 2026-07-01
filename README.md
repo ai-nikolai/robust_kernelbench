@@ -108,7 +108,7 @@ conda activate env_robust_kernelbench
 ## Slurm:
 ```bash
 salloc --partition=interactive-gpu --gres=gpu:h200:2 --time=01:00:00 --ntasks=2
-srun --jobid=100489 --pty bash
+srun --jobid=100491 --pty bash
 ```
 
 
