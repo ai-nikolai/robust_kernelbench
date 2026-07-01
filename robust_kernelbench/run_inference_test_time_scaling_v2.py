@@ -1,8 +1,4 @@
 import os
-os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
-os.environ["VLLM_ALLREDUCE_USE_SYMM_MEM"] = "0"
-os.environ["VLLM_SHARED_MEM_BROADCAST_TIMEOUT"] = "300"  # 5 minutes
-os.environ["VLLM_FLASHINFER_ALLREDUCE"] = "0"
 
 import json
 from pathlib import Path
@@ -27,9 +23,11 @@ if __name__=="__main__":
     # https://docs.vllm.ai/en/latest/usage/troubleshooting/#runtimeerror-exception
 
     import torch
+    import sglang as sgl
+    # from sglang.srt.sampling.sampling_params import SamplingParams
 
-    from vllm import LLM, SamplingParams
-    from vllm.lora.request import LoRARequest
+    # from vllm import LLM, SamplingParams
+    # from vllm.lora.request import LoRARequest
 
     from transformers import AutoTokenizer
 
@@ -89,22 +87,18 @@ def load_model_and_tokenizer(
         trust_remote_code=True
     )
 
-    print(f"\n\n===============2\nSetting up VLLM \n\n\n")
+    print(f"\n\n===============\nSetting up SGLANG \n\n\n")
     # Initialize the LLM engine
-    engine = LLM(
-        model=model_name,
-        tokenizer=tokenizer_name,
+    engine = sgl.Engine(
+        model_path=model_name,
+        tokenizer_path=tokenizer_name,
         trust_remote_code=True,
-        dtype=dtype,  # #auto, half, float16, bfloat16
-        gpu_memory_utilization=gpu_memory_util,
-        max_model_len=max_model_len,
-        enable_lora=enable_lora,
-        max_lora_rank=max_lora_rank,
-        tensor_parallel_size=tensor_parallel_size,
-        disable_custom_all_reduce=True,
-        # distributed_executor_backend="ray",
+        dtype=dtype,
+        mem_fraction_static=gpu_memory_util,
+        context_length=max_model_len,
+        tp_size=tensor_parallel_size,
     )
-    print(f"\n\n\n---------------\nVLLM Setup finished.\n\n\n")
+    print(f"\n\n\n---------------\SGLANG Setup finished.\n\n\n")
 
     return engine, tokenizer
 
@@ -273,25 +267,31 @@ def run_pipeline(
     dataset = dataset.select(range(num_items)) if num_items else dataset
 
     # Only set up local vLLM params when not using TTS service
-    lora_request = None
+    lora_path = None
     sampling_params = None
     if tts_client is None:
+        
         if lora_name:
             try:
-                no_impact_lora_name = "vllm_lora_request"
-                lora_request = LoRARequest(no_impact_lora_name, 1, lora_name)
+                lora_path = lora_name
             except Exception as e:
                 print("[RUN PIPELINE] NO LORA ADAPTER FOUND")
                 print(e)
-                lora_request=None
+                lora_path=None
         else:
             print("[RUN PIPELINE] We don't have Lora...")
 
-        sampling_params = SamplingParams(
-            n=num_samples,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        # sampling_params = SamplingParams(
+        #     n=num_samples,
+        #     temperature=temperature,
+        #     max_new_tokens=max_tokens,  
+        # )
+        sampling_params = {
+            "n": num_samples, 
+            "temperature": temperature,
+            "max_new_tokens":max_tokens,
+        }
+        print("Got sampling params.")
     pbar = tqdm(dataset)
     for sample in pbar:
         try:
@@ -382,7 +382,8 @@ def run_pipeline(
                 out_num_tokens_raw = response.usage.completion_tokens if response.usage else 0
             else:
                 # Original local vLLM path: 
-                tokens = tokenizer.apply_chat_template(messages,
+                tokens = tokenizer.apply_chat_template(
+                    messages,
                     tokenize = False,
                     add_generation_prompt = True,
                     enable_thinking=False,
@@ -391,12 +392,13 @@ def run_pipeline(
                 in_token_ids = tokenizer.apply_chat_template(messages, add_generation_prompt = True, enable_thinking=False,)
                 in_num_tokens = len(in_token_ids)
 
-                outputs = engine.generate([tokens], sampling_params=sampling_params, lora_request=lora_request, use_tqdm=False)
+                outputs = engine.generate([tokens], sampling_params=sampling_params, lora_path=lora_path)
 
                 generations = []
                 for output in outputs:
-                    single_gen = output.outputs[0].text.strip()
+                    single_gen = output["text"].strip()
                     generations.append(single_gen)
+                    
                 out_num_tokens_raw = None
 
             end = time.time()

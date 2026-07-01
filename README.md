@@ -108,13 +108,19 @@ conda activate env_robust_kernelbench
 ## Slurm:
 ```bash
 salloc --partition=interactive-gpu --gres=gpu:h200:2 --time=01:00:00 --ntasks=2
-srun --jobid=100430 --pty bash
+srun --jobid=100489 --pty bash
 ```
 
 
 ---
 ## (C) Nikolai Rozanov - 2025 - Present
 
+
+<!-- Example command to run Qwen-Max-Plus on two GPUs.
+
+    python3 robust_kernelbench/run_inference_test_time_scaling_v2.py --experiment_name exp_local_L1_V8_3_Qwen3_Coder_Next__API0 --model_name Qwen/Qwen3-Coder-Next --max_model_len 16000 --max_tokens 10000 --prompt_type single_stage --num_items 1 --num_samples 1 --trial 1 --previous_trial 1 --level 1 --max_mem_util 0.90 --tensor_parallel_size 2
+
+ -->
 
 <!-- 
 git config --global user.name "Nikolai Rozanov"
