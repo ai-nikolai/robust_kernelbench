@@ -107,10 +107,49 @@ conda activate env_robust_kernelbench
 
 ## Slurm:
 ```bash
-salloc --partition=interactive-gpu --gres=gpu:h200:2 --time=01:00:00 --ntasks=2
-srun --jobid=100491 --pty bash
+salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=04:00:00 --ntasks=3
+srun --jobid=100633 --pty bash
 ```
 
+## Tmux:
+https://tmux.info/docs/cheatsheet
+
+1. Getting it running
+```bash
+tmux
+```
+
+2. Switching between windows:
+```
+CTRL+b w #switch between windows
+CTRL+b c #create new window
+Ctrl+b " #split vertical
+Ctrl+b d #detach from tmux
+```
+
+
+## LLM Serving
+
+1. Running sglang
+```bash
+# create config
+cat > config.yaml << EOF
+model-path: Qwen/Qwen3-Coder-Next
+host: 0.0.0.0
+port: 30000
+tensor-parallel-size: 2
+enable-metrics: true
+log-requests: true
+EOF
+
+# run server
+python -m sglang.launch_server --config config.yaml
+```
+
+2. Testing it is running:
+```bash
+curl -v http://0.0.0.0:30000/health
+```
 
 ---
 ## (C) Nikolai Rozanov - 2025 - Present
