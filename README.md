@@ -108,7 +108,7 @@ conda activate env_robust_kernelbench
 ## Slurm:
 ```bash
 salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=04:00:00 --ntasks=3
-srun --jobid=100633 --pty bash
+srun --jobid=100724 --pty bash
 ```
 
 ## Tmux:
@@ -127,10 +127,38 @@ Ctrl+b " #split vertical
 Ctrl+b d #detach from tmux
 ```
 
-
 ## LLM Serving
 
-1. Running sglang
+1. Serving LLM
+```bash
+python3 -m sglang.launch_server \
+--model-path Qwen/Qwen3-Coder-Next \
+--tensor-parallel-size 2 \
+--tool-call-parser qwen3_coder \
+--host 0.0.0.0 \
+--port 30000
+```
+
+
+2. Testing it is running:
+```bash
+curl -v http://0.0.0.0:30000/health
+```
+
+---
+## (C) Nikolai Rozanov - 2025 - Present
+
+<!-- 
+read train.py and split it into two files. evaluate.py and model.py evaluate should handel
+ all data loading, and the actual training loop and reporting of results. Model.py should have 
+all the model and optimiser code. 
+-->
+
+<!-- 
+python -c "import mini_code_cli; print('OK')"
+ -->
+
+<!-- 1. Running sglang
 ```bash
 # create config
 cat > config.yaml << EOF
@@ -144,16 +172,7 @@ EOF
 
 # run server
 python -m sglang.launch_server --config config.yaml
-```
-
-2. Testing it is running:
-```bash
-curl -v http://0.0.0.0:30000/health
-```
-
----
-## (C) Nikolai Rozanov - 2025 - Present
-
+``` -->
 
 <!-- Example command to run Qwen-Max-Plus on two GPUs.
 
