@@ -17,6 +17,8 @@ analysis_output/*
 
 config.yaml
 
+history.json
+
 __pycache__
 experiments_backup/
 experiments_backup2/

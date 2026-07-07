@@ -100,15 +100,13 @@ source /workspace/miniconda3/etc/profile.d/conda.sh
 source ~/miniconda3/etc/profile.d/conda.sh
 
 conda activate env_robust_kernelbench 
-
-
 #it was created using `conda create -n env_robust_kernelbench python=3.11
 ```
 
 ## Slurm:
 ```bash
 salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=04:00:00 --ntasks=3
-srun --jobid=100724 --pty bash
+srun --jobid=100740 --pty bash
 ```
 
 ## Tmux:
