@@ -393,17 +393,19 @@ if __name__=="__main__":
         results = eval_main_loop(actual_ds, experiment_name=experiment_name, trial=args.trial, level=args.level,pid_sid_set=pid_sid_set)
         print("[Main] Done with evaluate all.")
     else:
-        print("[Main] Warning: No successful compilations found. Attempting to fill in the blanks...")
+        print("[Main] Warning: No successful compilations found.")
 
+
+    try:
         # Ensure compilations.csv and evaluations.csv exist if not present
         output_dir = get_folder_path(experiment_name, args.trial)
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        # Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         compilations_csv = os.path.join(output_dir, 'compilations.csv')
         if os.path.exists(compilations_csv):
-            print("[Main] WARNING: GENERATING EMPTY evaluations.csv, since compilations.csv exists.")
             evaluations_csv = os.path.join(output_dir, 'evaluations.csv')
             if not os.path.exists(evaluations_csv):
+                print("[Main] WARNING: GENERATING EMPTY evaluations.csv, since compilations.csv exists, but no evaluations.csv.")
                 empty_evaluations_df = pd.DataFrame(columns=[
                     'problem_id', 
                     'sample_id', 
@@ -425,7 +427,10 @@ if __name__=="__main__":
                 ])
                 empty_evaluations_df.to_csv(evaluations_csv, index=False)
                 print(f"[Main] Created empty evaluations.csv at {evaluations_csv}")
-            
+            else:
+                print(f"[Main] compilations.csv and evaluations.csv files exist. All seems ok.")
+    except Exception as e:
+        print(f"[Main] Filling in the blanks, did not work for evaluations.csv. {e}")  
     
     print("[Main] Exiting...")
 
