@@ -3,3 +3,4 @@ sglang-kernel==0.4.4
 pandas==3.0.3
 datasets==5.0.0
 tomli==2.4.1
+torch==2.11.0

@@ -3,15 +3,15 @@
 # Script to run a single job locally (without job scheduler)
 CUDA_VISIBLE_DEVICES=2
 
-LOCAL_HOME="~"
-NUM_GPUS=2
+LOCAL_HOME="/hx2-weka/home/nr1713/"
+NUM_GPUS=1
 
 PREVIOUS_TRIAL=${1:-1}
 NEW_TRIAL=${2:-1}
 PROMPT_TYPE=${3:-"kernelbench"}
 
-ONLINE_SERVICE_URL=http://localhost:30000/v1
-USE_ONLINE=${11:-0}
+ONLINE_SERVICE_URL="http://localhost:30000/v1"
+USE_ONLINE=${11:-1}
 
 EXPERIMENT_NAME=${4:-""}
 # MODEL_NAME=${5:-"Qwen/Qwen3-Coder-30B-A3B-Instruct"}
@@ -169,7 +169,7 @@ if [ "${INFERENCE}" == "1" ];then
     echo "============= Starting Inference"
     echo "python3 run_inference.py"
     echo ${ARGS}
-    python3 robust_kernelbench/run_inference_test_time_scaling.py ${ARGS}
+    python3 robust_kernelbench/run_inference_test_time_scaling_v2.py ${ARGS}
     END_INFERENCE=$(date +"%Y-%m-%d_%H:%M:%S") # Format: YYYY-MM-DD_HH-MM-SS
 
     echo "START INFERENCE: $START_INFERENCE"

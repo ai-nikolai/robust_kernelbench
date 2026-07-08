@@ -100,13 +100,16 @@ source /workspace/miniconda3/etc/profile.d/conda.sh
 source ~/miniconda3/etc/profile.d/conda.sh
 
 conda activate env_robust_kernelbench 
+
+conda activate env_kb
 #it was created using `conda create -n env_robust_kernelbench python=3.11
 ```
 
-## Slurm:
+### Slurm:
 ```bash
-salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=04:00:00 --ntasks=3
-srun --jobid=100740 --pty bash
+salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=08:00:00 --ntasks=3
+srun --pty --overlap --jobid=100831 bash
+tmux attach -t 0
 ```
 
 ## Tmux:
@@ -141,6 +144,7 @@ python3 -m sglang.launch_server \
 2. Testing it is running:
 ```bash
 curl -v http://0.0.0.0:30000/health
+curl -v http://0.0.0.0:30000/model_info
 ```
 
 ---

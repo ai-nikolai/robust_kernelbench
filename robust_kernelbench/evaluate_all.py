@@ -394,7 +394,49 @@ if __name__=="__main__":
         print("[Main] Done with evaluate all.")
     else:
         print("[Main] Warning: No successful compilations found.")
-    
+
+        print("[MAIN] WARNING: GENERATING EMPTY compilations.csv and evaluations.csv")
+        # Ensure compilations.csv and evaluations.csv exist if not present
+        output_dir = get_folder_path(experiment_name, args.trial)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+        compilations_csv = os.path.join(output_dir, 'compilations.csv')
+        if not os.path.exists(compilations_csv):
+            empty_compilations_df = pd.DataFrame(columns=[
+                'problem_id', 'sample_id', 'format_passed', 'pre_compiled', 'compiled',
+                'runtime_success', 'model_new_available', 'metadata', 'main_output',
+                'main_output_runtime', 'main_error', 'main_traceback'
+            ])
+            empty_compilations_df.to_csv(compilations_csv, index=False)
+        # Add rows from the actual dataset with default values
+        data_rows = []
+        for problem in actual_ds:
+            problem_id = problem['problem_id']
+            for sample_id in range(args.num_samples):  # Assuming num_samples defines how many samples per problem
+                data_rows.append({
+                    'problem_id': problem_id,
+                    'sample_id': sample_id,
+                    'format_passed': False,  # whether there is any code... (or it is empty)
+                    'pre_compiled': False,  # whether compile() was successful
+                    'compiled': False,  # whether when exec() failed with 'Error building extension'
+                    'runtime_success': False,  # whether exec() was successful
+                    'model_new_available': False,  # whether ModelNew is available.
+                })
+            compilations_df = pd.read_csv(compilations_csv)
+            new_rows_df = pd.DataFrame(data_rows)
+            combined_df = pd.concat([compilations_df, new_rows_df], ignore_index=True)
+            combined_df.to_csv(compilations_csv, index=False)
+            print(f"[Main] Added {len(data_rows)} rows to compilations.csv")
+        else:
+            print("[Main] No data rows to add to compilations.csv")
+
+        evaluations_csv = os.path.join(output_dir, 'evaluations.csv')
+        if not os.path.exists(evaluations_csv):
+            empty_evaluations_df = pd.DataFrame(columns=['problem_id', 'sample_id', 'correctness', 'performance', 'trial'])
+            empty_evaluations_df.to_csv(evaluations_csv, index=False)
+            print(f"[Main] Created empty evaluations.csv at {evaluations_csv}")
+
+
     
     print("[Main] Exiting...")
 

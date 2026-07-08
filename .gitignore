@@ -38,3 +38,7 @@ cuda.cuda.o
 main.cpp 
 main.o 
 matmul_op.so 
+
+out.txt
+
+robust_kernelbench/tmp.py
