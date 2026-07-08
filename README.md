@@ -110,6 +110,7 @@ conda activate env_kb
 salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=08:00:00 --ntasks=3
 srun --pty --overlap --jobid=100831 bash
 tmux attach -t 0
+tmux capture-pane -t 0:0.0 -S - && tmux save-buffer ./output.txt
 ```
 
 ## Tmux:

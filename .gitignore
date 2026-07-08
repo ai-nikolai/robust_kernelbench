@@ -40,5 +40,6 @@ main.o
 matmul_op.so 
 
 out.txt
+output.txt
 
 robust_kernelbench/tmp.py
