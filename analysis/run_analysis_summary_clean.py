@@ -247,6 +247,18 @@ def load_trial_data(base_experiment_name, trial, base_experiments_folder="experi
     out_df = pd.DataFrame(all_data)
     return out_df
 
+def get_method_name(df):
+    if df['prompt_type'][0] == "single_stage":
+        return "iterative_refinement_v1"
+    elif df['prompt_type'][0] == "kernelbench":
+        return "iterative_refinement_v2"
+    elif df['prompt_type'][0] == "multi_stage":
+        return "inductive_bias_v1"
+    elif df['prompt_type'][0] == "kb_multi_stage":
+        return "+inductive_bias_v2"
+    else:
+        return df['prompt_type']
+
 def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_folder="experiments"):
     """Compare two trials based on problem_id grouping"""
 
@@ -255,12 +267,14 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
         trials_different = False
 
     df_trial1 = load_trial_data(base_experiment_name, trial1,base_experiments_folder=base_experiments_folder)
+    # df_trial1["method_name"] = df_trial1['prompt_type']
 
     if trials_different:
         df_trial2 = load_trial_data(base_experiment_name, trial2,base_experiments_folder=base_experiments_folder)
     else:
         df_trial2 = pd.DataFrame()
-    
+        # df_trial2["method_name"] = df_trial2['prompt_type']
+
 
 
     print("[COMPARE ANALYSIS]")
@@ -274,8 +288,8 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
         required_columns = [
             # CONFIG
             "model_name",
-            "method_name", #NEW
-            # "prompt_type",
+            # "method_name", #NEW
+            "prompt_type",
             # Compilations
             "format_passed_global",
             "pre_compiled_global",
@@ -301,8 +315,8 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
         required_columns = [
             # CONFIG
             "model_name",
-            "method_name", #NEW
-            # "prompt_type",
+            # "method_name", #NEW
+            "prompt_type",
             # Compilations
             "format_passed_global",
             "pre_compiled_global",
@@ -330,14 +344,14 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
             df_trial1[col] = None
 
     df_trial1 = df_trial1[required_columns]
-    df_trial1["method_name"] = "iterative_refinement"
+    # df_trial1["method_name"] = "iterative_refinement"
     if trials_different:
         for col in required_columns:
             if col not in df_trial2.columns:
                 df_trial2[col] = None
 
         df_trial2 = df_trial2[required_columns]
-        df_trial2["method_name"] = "+inductive"
+        # df_trial2["method_name"] = "+inductive_bias"
 
 
     combined = pd.concat([df_trial1,df_trial2], axis=0)

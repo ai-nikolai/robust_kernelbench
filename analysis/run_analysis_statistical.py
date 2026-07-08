@@ -11,7 +11,7 @@ import sys
 import os
 from pathlib import Path
 
-def aggregate_across_files(file_paths):
+def aggregate_across_files(file_paths, special_key2="prompt_type"):
     """
     Accepts a list of CSV file paths, aggregates across models and methods,
     and outputs a CSV with mean and standard deviation for each metric.
@@ -23,18 +23,18 @@ def aggregate_across_files(file_paths):
         # Ensure required columns exist
         if 'model_name' not in df.columns:
             raise ValueError(f"File {file_path} must contain 'model_name' column")
-        if 'method_name' not in df.columns:
-            raise ValueError(f"File {file_path} must contain 'method_name' column")
+        if f'{special_key2}' not in df.columns:
+            raise ValueError(f"File {file_path} must contain '{special_key2}' column")
         # Set multi-index for consistent merging
-        df = df.set_index(['model_name', 'method_name'])
+        df = df.set_index(['model_name', f'{special_key2}'])
         dataframes.append(df)
 
     # Combine all DataFrames by concatenating along rows (different observations)
     combined = pd.concat(dataframes, axis=0)
 
     # Group by model_name and method_name, compute mean and std for each metric
-    mean_df = combined.groupby(level=['model_name', 'method_name']).mean()
-    std_df = combined.groupby(level=['model_name', 'method_name']).std()
+    mean_df = combined.groupby(level=['model_name', f'{special_key2}']).mean()
+    std_df = combined.groupby(level=['model_name', f'{special_key2}']).std()
 
     # Rename columns to indicate mean or std
     mean_df = mean_df.add_suffix('_mean')
@@ -59,14 +59,15 @@ def aggregate_across_files(file_paths):
     return result
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python aggregate_analysis.py <input_files...> <output_file>")
-        print("Example: python aggregate_analysis.py file1.csv file2.csv output.csv")
+    if len(sys.argv) < 2:
+        print("Usage: python aggregate_analysis.py <input_files...>")
+        print("Example: python aggregate_analysis.py file1.csv file2.csv")
         sys.exit(1)
 
     # All arguments except the last one are input files
-    input_files = sys.argv[1:-1]
-    output_file = sys.argv[-1]
+    input_files = sys.argv[1:]
+    # output_file = sys.argv[-1]
+    output_file = input_files[0].replace("_clean","_statistical_analysis")
 
     if not input_files:
         print("Error: No input CSV files provided.")

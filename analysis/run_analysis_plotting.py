@@ -1,15 +1,40 @@
+"""
+USAGE:
+
+python3 analysis/run_analysis_plotting.py --file_path analysis_output/V8_3_comparison_statistical_analysis_2_3.csv
+"""
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 
-# Load the data
-df = pd.read_csv('analysis_output/V8_3_comparison_statistical_analysis_2_3.csv')
 
+def get_args():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--file_path", type=str, default="analysis_output/V8_3_comparison_statistical_analysis_2_3.csv",help="Path")
+    args = parser.parse_args()
+    return args
+
+args = get_args()
+
+FILE_PATH = args.file_path
+OUT_FILE_PATH = FILE_PATH.replace(".csv","_plotting.png")
+
+# Load the data
+df = pd.read_csv(FILE_PATH)
+
+
+# special_key="Method Name"
+special_key="Prompt Type"
 # Rename columns for clarity (keeping both mean and std)
 required_columns_mean = {
     "model_name": "Model Name",
-    "method_name": "Method Name",
+    # "method_name": "Method Name",
+    "prompt_type" : "Prompt Type",
     "format_passed_global_mean": "Format Success",
     "pre_compiled_global_mean": "Syntax Success",
     "compiled_global_compiled_mean": "Compilation Step 1 Success",
@@ -27,7 +52,9 @@ required_columns_mean = {
 df.rename(columns=required_columns_mean, inplace=True)
 
 # Melt the dataframe: each metric as a separate row (only mean values)
-id_vars = ["Model Name", "Method Name"]
+# id_vars = ["Model Name", "Method Name"]
+id_vars = ["Model Name", "Prompt Type"]
+
 value_vars = [v for k, v in required_columns_mean.items() if k not in id_vars]
 df_melted = df.melt(id_vars=id_vars, value_vars=value_vars,
                     var_name="Metric", value_name="Mean Value")
@@ -37,18 +64,18 @@ models = df["Model Name"].unique()
 print(models)
 
 # HARD CODE MODELS:
-models = [  
+# models = [  
     # 'Qwen/Qwen3-4B',
     # 'Qwen/Qwen3-8B',
     # 'Qwen/Qwen3-14B',
     # 'Qwen/Qwen3-32B',
     # 'Qwen/Qwen3-30B-A3B-Instruct-2507',
-    'Qwen/Qwen3-Coder-30B-A3B-Instruct',
-    'deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct',
+    # 'Qwen/Qwen3-Coder-30B-A3B-Instruct',
+    # 'deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct',
     # 'deepseek/deepseek-v3.1-terminus',
     # 'mistralai/devstral-2512',
     # 'openai/gpt-oss-120b'
-]
+# ]
 NCOLS=2
 
 # models = [  
@@ -85,16 +112,18 @@ for i, model in enumerate(models):
     model_data = model_data.copy()
     model_data["Metric"] = pd.Categorical(model_data["Metric"], categories=ordered_metrics, ordered=True)
     # Rename method names and set order
-    method_order = ["IR", "+IB"]
-    model_data["Method Name"] = model_data["Method Name"].replace({
+    # method_order = ["IR", "+IB"]
+    # method_order = df[f"{special_key}"].unique()
+    method_order = ["single_stage","multi_stage", "kernelbench", "kb_multi_stage"]
+    model_data[f"{special_key}"] = model_data[f"{special_key}"].replace({
         "iterative_refinement": "IR",
         "+inductive": "+IB"
     })
     # Ensure the hue order
-    model_data["Method Name"] = pd.Categorical(model_data["Method Name"],
+    model_data[f"{special_key}"] = pd.Categorical(model_data[f"{special_key}"],
                                                categories=method_order, ordered=True)
 
-    sns.barplot(data=model_data, x="Metric", y="Mean Value", hue="Method Name",
+    sns.barplot(data=model_data, x="Metric", y="Mean Value", hue=f"{special_key}",
                 palette=palette, ax=ax, ci=None, edgecolor='black', linewidth=0.5,
                 hue_order=method_order)
 
@@ -111,5 +140,5 @@ for j in range(len(models), len(axes_flat)):
     axes_flat[j].set_visible(False)
 
 plt.tight_layout()
-plt.savefig('V8_3_comparison_statistical_analysis_2_3_barplot.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{OUT_FILE_PATH}', dpi=300, bbox_inches='tight')
 plt.show()
