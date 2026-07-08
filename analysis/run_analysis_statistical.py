@@ -1,3 +1,10 @@
+"""
+USAGE:
+
+python3 analysis/run_analysis_statistical.py analysis_output/V8_3_comparison_clean_t2_vs_t3.csv analysis_output/V8_3_comparison_clean_t12_vs_t13.csv analysis_output/V8_3_comparison_clean_t22_vs_t23.csv analysis_output/V8_3_comparison_statistical_analysis_2_3.csv
+
+"""
+
 import pandas as pd
 import numpy as np
 import sys
@@ -87,9 +94,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-"""
-USAGE:
-
-python3 robust_kernelbench/analysis/run_analysis_statistical.py analysis_output/V8_3_comparison_clean_t2_vs_t3.csv analysis_output/V8_3_comparison_clean_t12_vs_t13.csv analysis_output/V8_3_comparison_clean_t22_vs_t23.csv analysis_output/V8_3_comparison_statistical_analysis_2_3.csv
-
-"""
