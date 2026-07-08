@@ -2,7 +2,7 @@
 #SBATCH --job-name=kb
 #SBATCH --output=logs/sglang_benchmark_%j.out
 #SBATCH --error=logs/sglang_benchmark_%j.err
-#SBATCH --time=02:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:3
 #SBATCH --ntasks=1
@@ -62,23 +62,28 @@ conda activate env_robust_kernelbench
 # ----------------------------------------------------------------------
 export CUDA_VISIBLE_DEVICES=2
 
+parent_kernel_type="kernelbench"
 jobs=(
     "1 1 kernelbench"
     "1 4 kernelbench"
+    "1 5 kb_multi_stage"
     "4 204 kernelbench"
+    "5 205 kb_multi_stage"
 )
 
-# python3 robust_kernelbench/run_main.py \
-#     --model qwen_coder_next \
-#     --filter
-#     "${jobs[@]}"
+python3 robust_kernelbench/run_main.py \
+    --version "v9" \
+    --model qwen_coder_next \
+    --parent_prompt_type "${parent_kernel_type}" \
+    --filter \
+    "${jobs[@]}"
 
 # Test job
-python3 robust_kernelbench/run_main.py \
-    --model default2 \
-    --reset_experiments \
-    --num_items 1 \
-    "${jobs[@]}"
+# python3 robust_kernelbench/run_main.py \
+#     --model default2 \
+#     --reset_experiments \
+#     --num_items 1 \
+#     "${jobs[@]}"
 
 # ----------------------------------------------------------------------
 # 4. Cleanup: kill the server when done
