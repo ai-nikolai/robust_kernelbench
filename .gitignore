@@ -43,3 +43,7 @@ out.txt
 output.txt
 
 robust_kernelbench/tmp.py
+
+logs/*
+
+sglang_benchmark_*

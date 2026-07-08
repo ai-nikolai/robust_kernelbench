@@ -3,7 +3,7 @@ USAGE:
 
 ###############################
 # FINAL ANALYSIS
-python3 analysis/run_analysis_summary_clean.py --experiment V8_3 --trial1 1
+python3 analysis/run_analysis_summary_clean.py --experiment V8_3 --trial1 1 --trial2 4
 
 
 python3 analysis/run_analysis_summary_clean.py --experiment V8_3 --trial1 2 --trial2 3 --base_experiments_folder experiments_backup2

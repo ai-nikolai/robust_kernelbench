@@ -7,7 +7,7 @@ jobs = (
     "1 4 kernelbench"
 )
 python3 run_main.py --parent_prompt_type kernelbench --filter $(jobs[@])
-python3 robust_kernelbench/run_main.py --reset_experiments --num_items 1 --filter
+python3 robust_kernelbench/run_main.py --reset_experiments
 
 Assumes:
 - Conda environment is already activated (or `python3` points to the right interpreter).
@@ -225,14 +225,19 @@ if __name__=="__main__":
     # parser.add_argument('jobs', nargs='*', help='List of job strings')
     # args = parser.parse_args()
 
-    # for job in args.jobs:
-    #     run, node, name = job.split()
-    #     print(f"Run: {run}, Node: {node}, Name: {name}")
-    
-    run_config = [
-        (1,1,"kernelbench"),
-        (1,4,"kernelbench")
-    ]
+    if args.jobs:
+        print(f"JOBS IS SET: {args.jobs}.")
+        run_config = []
+        for job in args.jobs:
+            prev, new, prompt_type = job.split()
+            run_config.append( (int(prev), int(new), str(prompt_type)) )
+    else:
+        print(f"JOBS IS NOT SET.")
+        run_config = [
+            (1,1,"kernelbench"),
+            (1,4,"kernelbench")
+            # (4,204,"kernelbench")
+        ]
 
     main_loop(run_config, "kernelbench")
 

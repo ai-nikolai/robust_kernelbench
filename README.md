@@ -106,6 +106,12 @@ conda activate env_kb
 ```
 
 ### Slurm:
+1. Job
+```bash
+sbatch scripts/slurm_job_v2.sh
+```
+
+2. Interactive
 ```bash
 salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=08:00:00 --ntasks=3
 srun --pty --overlap --jobid=100831 bash
