@@ -1,6 +1,6 @@
 # SCRIPT
 
-VERSION="v9_3"
+VERSION="v9_4"
 WALLTIME="12:00:00"
 NUM_GPUS=3
 
@@ -8,23 +8,23 @@ NUM_GPUS=3
 MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
 
 
-# PARENT_PROMPT_TYPE="kernelbench"
-# JOBS=(
-#     "1 1 kernelbench"
-#     "1 4 kernelbench"
-#     "1 5 kb_multi_stage"
-#     "4 204 kernelbench"
-#     "5 205 kb_multi_stage"
-# )
-
-PARENT_PROMPT_TYPE="normal"
+PARENT_PROMPT_TYPE="kernelbench"
 JOBS=(
-    "1 1 single_stage"
-    "1 4 single_stage"
-    "1 5 multi_stage"
-    "4 204 single_stage"
-    "5 205 multi_stage"
+    "1 1 kernelbench"
+    "1 4 kernelbench"
+    "1 5 kb_multi_stage"
+    "4 204 kernelbench"
+    "5 205 kb_multi_stage"
 )
+
+# PARENT_PROMPT_TYPE="normal"
+# JOBS=(
+#     "1 1 single_stage"
+#     "1 4 single_stage"
+#     "1 5 multi_stage"
+#     "4 204 single_stage"
+#     "5 205 multi_stage"
+# )
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 

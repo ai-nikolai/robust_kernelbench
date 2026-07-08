@@ -233,13 +233,13 @@ if __name__=="__main__":
             run_config.append( (int(prev), int(new), str(prompt_type)) )
     else:
         print(f"JOBS IS NOT SET.")
-        run_config = [
-            (1,1,"kernelbench"),
-            (1,4,"kernelbench")
-            # (4,204,"kernelbench")
-        ]
+        # run_config = [
+        #     (1,1,"kernelbench"),
+        #     (1,4,"kernelbench")
+        #     # (4,204,"kernelbench")
+        # ]
 
-    main_loop(run_config, "kernelbench")
+    main_loop(run_config, args.parent_prompt_type)
 
 
 
