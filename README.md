@@ -8,18 +8,31 @@ This repo is also for the paper: "FIL Hypothesis"... (Citation coming soon).
 ## Getting started:
 1. Installation
 ```bash
-# conda create -n env_robust_kernelbench python=3.11
-# conda activate env_robust_kernelbench
+# ENV for the model (sglang)
+conda create -n env_kb python=3.11
+conda activate env_kb
 pip3 install -r requirements_new_sglang.txt
-conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this. 
-conda install cuda-toolkit
+
+# ENV for kernelbench (newer KB breaks)
+conda create -n env_kb2 python=3.11
+conda activate env_kb2
+pip3 install -r requirements.txt
+# conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this. 
+# conda install cuda-toolkit
+
+# OTHER:
 # conda install -c conda-forge gxx_linux-64 gcc_linux-64 make #you don't really need this, but it should resolve the cxx warning.
 # export PIP_CACHE_DIR=/workspace/cache
 # export TMPDIR=/workspace/cache
 ```
 
 ## Running the code:
-1. End-2-end scripts: (1. Generate Kernels, 2. Compile Kernels (distributed), 3. Evaluate Kernels)
+1. Multi round end-2-end scripts (Slurm):
+```bash
+bash ./scripts/slurm_job_v2.sh
+```
+
+2. (older) End-2-end scripts: (1. Generate Kernels, 2. Compile Kernels (distributed), 3. Evaluate Kernels)
 ```bash
 bash ./scripts/run_tsp_jobs.sh #local server (see task-spooler below)
 # OR
@@ -27,6 +40,15 @@ bash ./scripts/run_slurm_jobs.sh
 ```
 
 ### Sequentially running each part seperately
+0. Running all in one go (newer):
+```bash
+CUDA_VISIBLE_DEVICES=2
+jobs=(
+ "1 1 kernelbench"
+)
+python3 robust_kernelbench/run_main.py --version "v9_4" --model Qwen3_Coder_30B_A3B_Instruct     --parent_prompt_type "kernelbench" --num_samples 1 "${jobs[@]}" > out.txt
+```
+
 1. Model Inference scripts (1. Generate Kernels)
 ```bash
 #This is the command that will be run...
