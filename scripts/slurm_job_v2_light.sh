@@ -3,6 +3,9 @@
 VERSION="v9_4"
 WALLTIME="4:00:00"
 
+# ENV_NAME="env_robust_kernelbench"
+ENV_NAME="env_kb2"
+
 # MODEL_NAME="Qwen/Qwen3-Coder-Next"
 MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
 
@@ -63,7 +66,7 @@ cd /hx2-weka/home/nr1713/robust_kernelbench
 mkdir -p logs
 source /hx2-weka/home/nr1713/miniconda3/etc/profile.d/conda.sh
 
-conda activate env_robust_kernelbench
+conda activate ${ENV_NAME}
 
 # ----------------------------------------------------------------------
 # 3. Run the benchmark script

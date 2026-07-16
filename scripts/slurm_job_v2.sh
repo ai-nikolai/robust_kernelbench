@@ -1,30 +1,32 @@
 # SCRIPT
 
-VERSION="v9_4"
+VERSION="v9_6"
 WALLTIME="12:00:00"
 NUM_GPUS=3
 
-# MODEL_NAME="Qwen/Qwen3-Coder-Next"
-MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
+ENV_MODEL="env_kb"
+ENV_KB="env_kb2"
 
+MODEL_NAME="Qwen/Qwen3-Coder-Next"
+# MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
 
-PARENT_PROMPT_TYPE="kernelbench"
-JOBS=(
-    "1 1 kernelbench"
-    "1 4 kernelbench"
-    "1 5 kb_multi_stage"
-    "4 204 kernelbench"
-    "5 205 kb_multi_stage"
-)
-
-# PARENT_PROMPT_TYPE="normal"
+# PARENT_PROMPT_TYPE="kernelbench"
 # JOBS=(
-#     "1 1 single_stage"
-#     "1 4 single_stage"
-#     "1 5 multi_stage"
-#     "4 204 single_stage"
-#     "5 205 multi_stage"
+#     "1 1 kernelbench"
+#     "1 4 kernelbench"
+#     "1 5 kb_multi_stage"
+#     "4 204 kernelbench"
+#     "5 205 kb_multi_stage"
 # )
+
+PARENT_PROMPT_TYPE="normal"
+JOBS=(
+    "1 1 single_stage"
+    "1 4 single_stage"
+    "1 5 multi_stage"
+    "4 204 single_stage"
+    "5 205 multi_stage"
+)
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 
@@ -53,7 +55,7 @@ cat << EOF > "$output_folder/$output_file"
 cd /hx2-weka/home/nr1713/robust_kernelbench
 mkdir -p logs
 source /hx2-weka/home/nr1713/miniconda3/etc/profile.d/conda.sh
-conda activate env_kb
+conda activate ${ENV_MODEL}
 # ----------------------------------------------------------------------
 # 1. Launch SGLang server on GPUs 0 and 1
 # ----------------------------------------------------------------------
@@ -95,7 +97,7 @@ wait_for_server || { kill \$SERVER_PID; exit 1; }
 
 
 conda deactivate
-conda activate env_robust_kernelbench
+conda activate ${ENV_KB}
 
 # ----------------------------------------------------------------------
 # 3. Run the benchmark script on GPU 2
