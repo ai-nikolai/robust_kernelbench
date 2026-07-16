@@ -13,11 +13,12 @@ conda create -n env_kb python=3.11
 conda activate env_kb
 pip3 install -r requirements_new_sglang.txt
 
-# ENV for kernelbench (newer KB breaks)
+# ENV for kernelbench (newer requirements breaks)
 conda create -n env_kb2 python=3.11
 conda activate env_kb2
 pip3 install -r requirements.txt
 # conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this. 
+# Maybe needed?
 # conda install cuda-toolkit
 
 # OTHER:
