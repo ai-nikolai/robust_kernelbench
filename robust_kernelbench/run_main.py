@@ -19,6 +19,7 @@ import subprocess
 import datetime
 import re
 import os
+import sys
 
 import argparse
 
@@ -179,6 +180,7 @@ def main_loop(run_config, parent_prompt_type):
         # Compilation (clean + compile)
         if COMPILE in (1, 2):
             # Clean cache first
+            print("starting compile")
             try:
                 run(["python3", "robust_kernelbench/clean_cuda_cache.py",
                     "--experiment", EXPERIMENT_NAME, "--trial", str(new_trial), "--remove"],
@@ -240,6 +242,7 @@ if __name__=="__main__":
         # ]
 
     main_loop(run_config, args.parent_prompt_type)
+    sys.exit()
 
 
 

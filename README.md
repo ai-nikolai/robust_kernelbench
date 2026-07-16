@@ -10,8 +10,9 @@ This repo is also for the paper: "FIL Hypothesis"... (Citation coming soon).
 ```bash
 # conda create -n env_robust_kernelbench python=3.11
 # conda activate env_robust_kernelbench
-pip3 install -r requirements.txt
+pip3 install -r requirements_new_sglang.txt
 conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this. 
+conda install cuda-toolkit
 # conda install -c conda-forge gxx_linux-64 gcc_linux-64 make #you don't really need this, but it should resolve the cxx warning.
 # export PIP_CACHE_DIR=/workspace/cache
 # export TMPDIR=/workspace/cache
@@ -115,9 +116,17 @@ sbatch scripts/slurm_job_v2.sh
 ```bash
 # salloc --partition=interactive-gpu --gres=gpu:h200:1 --time=01:00:00 --ntasks=1
 salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=08:00:00 --ntasks=3
+# salloc --partition=interactive-gpu --time=08:00:00 --gres=gpu:h200:1
 srun --pty --overlap --jobid=100854 bash
 tmux attach -t 0
 tmux capture-pane -t 0:0.0 -S - && tmux save-buffer ./output.txt
+```
+
+3. other commands
+```bash
+scontrol ping
+scontrol show partition interactive-gpu
+scontrol show assoc user=$USER
 ```
 
 ## Tmux:

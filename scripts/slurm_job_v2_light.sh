@@ -1,8 +1,7 @@
 # SCRIPT
 
 VERSION="v9_4"
-WALLTIME="12:00:00"
-NUM_GPUS=3
+WALLTIME="4:00:00"
 
 # MODEL_NAME="Qwen/Qwen3-Coder-Next"
 MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
@@ -11,10 +10,10 @@ MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
 PARENT_PROMPT_TYPE="kernelbench"
 JOBS=(
     "1 1 kernelbench"
-    "1 4 kernelbench"
-    "1 5 kb_multi_stage"
-    "4 204 kernelbench"
-    "5 205 kb_multi_stage"
+    # "1 4 kernelbench"
+    # "1 5 kb_multi_stage"
+    # "4 204 kernelbench"
+    # "5 205 kb_multi_stage"
 )
 
 # PARENT_PROMPT_TYPE="normal"
@@ -43,73 +42,44 @@ cat << EOF > "$output_folder/$output_file"
 #SBATCH --error=logs/kb_%j.err
 #SBATCH --time=${WALLTIME}
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:${NUM_GPUS}
+#SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 
+echo "==========================="
+echo "NVIDIA ANALYSIS"
+which nvidia-smi
+which nvcc
+nvcc --version
+echo "CUDA Home:"
+echo \$CUDA_HOME
+echo "finished analysis"
+nvidia-smi
 
 
+echo "==========================="
 cd /hx2-weka/home/nr1713/robust_kernelbench
 mkdir -p logs
 source /hx2-weka/home/nr1713/miniconda3/etc/profile.d/conda.sh
-conda activate env_kb
-# ----------------------------------------------------------------------
-# 1. Launch SGLang server on GPUs 0 and 1
-# ----------------------------------------------------------------------
-export CUDA_VISIBLE_DEVICES=0,1
 
-MODEL_NAME=${MODEL_NAME}
-
-# Start server in background; save its PID for cleanup
-python3 -m sglang.launch_server \
-    --model-path  \${MODEL_NAME} \
-    --tensor-parallel-size 2 \
-    --host 0.0.0.0 \
-    --port 30000 &
-SERVER_PID=\$!
-
-# ----------------------------------------------------------------------
-# 2. Wait for server to be ready
-# ----------------------------------------------------------------------
-wait_for_server() {
-    local url="http://localhost:30000/health"
-    local max_attempts=30
-    local attempt=0
-    echo "Waiting for SGLang server to be ready..."
-    while true; do
-        if curl -s -f "\$url" > /dev/null 2>&1; then
-            echo "Server is ready."
-            return 0
-        fi
-        attempt=\$((attempt + 1))
-        if [ \$attempt -ge \$max_attempts ]; then
-            echo "ERROR: Server did not become ready in time."
-            return 1
-        fi
-        sleep 5
-    done
-}
-
-wait_for_server || { kill \$SERVER_PID; exit 1; }
-
-
-conda deactivate
 conda activate env_robust_kernelbench
 
 # ----------------------------------------------------------------------
-# 3. Run the benchmark script on GPU 2
+# 3. Run the benchmark script
 # ----------------------------------------------------------------------
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 
 jobs=(
 $(printf ' "%s"\n' "${JOBS[@]}")
 )
 
 python3 robust_kernelbench/run_main.py \
+    --inference 0 \
     --version "${VERSION}" \
     --model ${SHORT_MODEL_NAME} \
     --parent_prompt_type "${PARENT_PROMPT_TYPE}" \
+    --num_samples 1 \
     "\${jobs[@]}"
 
 # ----------------------------------------------------------------------
