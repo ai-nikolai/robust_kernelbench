@@ -123,9 +123,9 @@ source /workspace/miniconda3/etc/profile.d/conda.sh
 # OR
 source ~/miniconda3/etc/profile.d/conda.sh
 
-conda activate env_robust_kernelbench 
+conda activate env_kb #sglang
 
-conda activate env_kb
+conda activate env_kb2 #kb
 #it was created using `conda create -n env_robust_kernelbench python=3.11
 ```
 

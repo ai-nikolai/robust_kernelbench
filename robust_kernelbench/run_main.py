@@ -170,7 +170,8 @@ def main_loop(run_config, parent_prompt_type):
         # Inference
         if INFERENCE == 1:
             try:
-                run(["python3", "robust_kernelbench/run_inference_test_time_scaling_v2.py"] + base_args,
+                print("Running the vllm inference file. use: run_inference_test_time_scaling_v2.py for sglang in run_main.py")
+                run(["python3", "robust_kernelbench/run_inference_test_time_scaling.py"] + base_args,
                     "Inference")
             except Exception as e:
                 print(f"INFERENCE DID NOT WORK. {e}")

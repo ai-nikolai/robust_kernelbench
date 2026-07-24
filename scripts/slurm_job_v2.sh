@@ -1,32 +1,34 @@
 # SCRIPT
 
-VERSION="v9_6"
-WALLTIME="12:00:00"
+VERSION="v9_7"
+WALLTIME="15:00:00"
 NUM_GPUS=3
 
 ENV_MODEL="env_kb"
 ENV_KB="env_kb2"
 
+# NUM_ITEMS=1
+
 MODEL_NAME="Qwen/Qwen3-Coder-Next"
 # MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
-
-# PARENT_PROMPT_TYPE="kernelbench"
-# JOBS=(
-#     "1 1 kernelbench"
-#     "1 4 kernelbench"
-#     "1 5 kb_multi_stage"
-#     "4 204 kernelbench"
-#     "5 205 kb_multi_stage"
-# )
-
-PARENT_PROMPT_TYPE="normal"
+# 
+PARENT_PROMPT_TYPE="kernelbench"
 JOBS=(
-    "1 1 single_stage"
-    "1 4 single_stage"
-    "1 5 multi_stage"
-    "4 204 single_stage"
-    "5 205 multi_stage"
+    "1 1 kernelbench"
+    "1 4 kernelbench"
+    "1 5 kb_multi_stage"
+    "4 204 kernelbench"
+    "5 205 kb_multi_stage"
 )
+
+# PARENT_PROMPT_TYPE="normal"
+# JOBS=(
+#     "1 1 single_stage"
+#     "1 2 single_stage"
+#     "1 3 multi_stage"
+#     "4 202 single_stage"
+#     "5 203 multi_stage"
+# )
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 
@@ -38,11 +40,17 @@ output_folder="job_scripts"
 mkdir -p "${output_folder}"
 output_file="temp_slurm_v2_${timestamp}_${SIGNATURE}.sh" 
 
+
+ARGS=""
+if [ -n "${NUM_ITEMS}" ];then
+    ARGS="$ARGS --num_items ${NUM_ITEMS}"
+fi
+
 cat << EOF > "$output_folder/$output_file"
 #!/bin/bash
 #SBATCH --job-name=kb_${SIGNATURE}
-#SBATCH --output=logs/kb_%j.out
-#SBATCH --error=logs/kb_%j.err
+#SBATCH --output=logs/kb_%j_${SIGNATURE}.out
+#SBATCH --error=logs/kb_%j_${SIGNATURE}.err
 #SBATCH --time=${WALLTIME}
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:${NUM_GPUS}
@@ -112,6 +120,7 @@ python3 robust_kernelbench/run_main.py \
     --version "${VERSION}" \
     --model ${SHORT_MODEL_NAME} \
     --parent_prompt_type "${PARENT_PROMPT_TYPE}" \
+    $ARGS \
     "\${jobs[@]}"
 
 # ----------------------------------------------------------------------
