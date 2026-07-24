@@ -48,7 +48,7 @@ python3 -m sglang.launch_server \
     --tensor-parallel-size 2 \
     $MODEL_ARGS \
     --host 0.0.0.0 \
-    --port 30000
+    --port 30000 &
 
 SERVER_PID=$!
 

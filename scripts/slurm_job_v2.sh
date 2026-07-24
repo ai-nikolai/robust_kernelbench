@@ -9,9 +9,13 @@ ENV_KB="env_kb2"
 
 # NUM_ITEMS=1
 
-MODEL_NAME="Qwen/Qwen3-Coder-Next"
+MODEL_NAME="deepreinforce-ai/Ornith-1.0-35B"
+    # --tool-call-parser qwen3_coder \
+    # --reasoning-parser qwen3 \
+
+# MODEL_NAME="Qwen/Qwen3-Coder-Next"
 # MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
-# 
+
 PARENT_PROMPT_TYPE="kernelbench"
 JOBS=(
     "1 1 kernelbench"
