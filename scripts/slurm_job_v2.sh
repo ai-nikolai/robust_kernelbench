@@ -1,14 +1,14 @@
 # SCRIPT
 
-VERSION="v9_6_test"
+VERSION="v9_6_test2"
 WALLTIME="15:00:00"
 NUM_GPUS=3
 
 P1=2
 P2=1
-# OR, if GPU Collacation
-# P1=1
-# P2=1 
+# OR, if GPU Collacation (seems like we can pause the sglang server...)
+P1=1
+P2=1 
 
 MODEL_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_GPUS-P2)))
 KB_VISIBLE_DEVICES=$((NUM_GPUS-P1))
@@ -97,7 +97,8 @@ python3 -m sglang.launch_server \
     --model-path  \${MODEL_NAME} \
     --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
     --host 0.0.0.0 \
-    --port 30000 &
+    --port 30000 \
+    --enable-memory-saver &
 SERVER_PID=\$!
 
 # ----------------------------------------------------------------------
