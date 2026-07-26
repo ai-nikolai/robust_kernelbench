@@ -2,8 +2,8 @@ VERSION=v9_7
 T1=4
 T2=5
 
-T1=2
-T2=3
+# T1=2
+# T2=3
 
 
 python3 analysis/run_analysis_summary_clean.py --experiment ${VERSION} --trial1 ${T1} --trial2 ${T2}

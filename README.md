@@ -9,9 +9,9 @@ This repo is also for the paper: "FIL Hypothesis"... (Citation coming soon).
 1. Installation
 ```bash
 # ENV for the model (sglang)
-conda create -n env_kb python=3.11
-conda activate env_kb
-pip3 install -r requirements_new_sglang.txt
+conda create -n env_model python=3.11
+conda activate env_model
+pip3 install -r requirements_sglang.txt
 
 # ENV for kernelbench (newer requirements breaks)
 conda create -n env_kb2 python=3.11
@@ -123,7 +123,7 @@ source /workspace/miniconda3/etc/profile.d/conda.sh
 # OR
 source ~/miniconda3/etc/profile.d/conda.sh
 
-conda activate env_kb #sglang
+conda activate env_model #sglang
 
 conda activate env_kb2 #kb
 #it was created using `conda create -n env_robust_kernelbench python=3.11

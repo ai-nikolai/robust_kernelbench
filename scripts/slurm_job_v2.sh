@@ -1,20 +1,36 @@
 # SCRIPT
 
-VERSION="v9_7"
+VERSION="v9_6_test"
 WALLTIME="15:00:00"
 NUM_GPUS=3
 
-ENV_MODEL="env_kb"
+P1=2
+P2=1
+# OR, if GPU Collacation
+# P1=1
+# P2=1 
+
+MODEL_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_GPUS-P2)))
+KB_VISIBLE_DEVICES=$((NUM_GPUS-P1))
+TENSOR_PARALLEL_SIZE=$((NUM_GPUS-P1))
+
+SERVER_TIME_OUT_SECONDS=1800 #30minutes
+
+ENV_MODEL="env_model2"
 ENV_KB="env_kb2"
 
 # NUM_ITEMS=1
 
-MODEL_NAME="deepreinforce-ai/Ornith-1.0-35B"
+
+# MODEL_NAME="sgl-project/DeepSeek-V4-Flash-FP8"
+# MODEL_NAME="deepreinforce-ai/Ornith-1.0-397B-FP8"
+# MODEL_NAME="deepreinforce-ai/Ornith-1.0-35B"
+
     # --tool-call-parser qwen3_coder \
     # --reasoning-parser qwen3 \
 
-# MODEL_NAME="Qwen/Qwen3-Coder-Next"
-# MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
+# MODEL_NAME="Qwen/Qwen3-Coder-Next" #removed from cache...
+MODEL_NAME="Qwen/Qwen3-Coder-30B-A3B-Instruct"
 
 PARENT_PROMPT_TYPE="kernelbench"
 JOBS=(
@@ -69,16 +85,17 @@ mkdir -p logs
 source /hx2-weka/home/nr1713/miniconda3/etc/profile.d/conda.sh
 conda activate ${ENV_MODEL}
 # ----------------------------------------------------------------------
-# 1. Launch SGLang server on GPUs 0 and 1
+# 1. Launch SGLang server on GPUs first NUM_GPUS-1 GPUs.
 # ----------------------------------------------------------------------
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=${MODEL_VISIBLE_DEVICES}
+export SGLANG_DSV4_FP4_EXPERTS=0 #maybe needed for SGLang on H200?
 
 MODEL_NAME=${MODEL_NAME}
 
 # Start server in background; save its PID for cleanup
 python3 -m sglang.launch_server \
     --model-path  \${MODEL_NAME} \
-    --tensor-parallel-size 2 \
+    --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
     --host 0.0.0.0 \
     --port 30000 &
 SERVER_PID=\$!
@@ -88,7 +105,7 @@ SERVER_PID=\$!
 # ----------------------------------------------------------------------
 wait_for_server() {
     local url="http://localhost:30000/health"
-    local max_attempts=30
+    local max_attempts=${SERVER_TIME_OUT_SECONDS}
     local attempt=0
     echo "Waiting for SGLang server to be ready..."
     while true; do
@@ -101,7 +118,7 @@ wait_for_server() {
             echo "ERROR: Server did not become ready in time."
             return 1
         fi
-        sleep 5
+        sleep 1
     done
 }
 
@@ -112,9 +129,9 @@ conda deactivate
 conda activate ${ENV_KB}
 
 # ----------------------------------------------------------------------
-# 3. Run the benchmark script on GPU 2
+# 3. Run the benchmark script on last GPU
 # ----------------------------------------------------------------------
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=${KB_VISIBLE_DEVICES}
 
 jobs=(
 $(printf ' "%s"\n' "${JOBS[@]}")

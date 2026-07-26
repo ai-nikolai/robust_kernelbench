@@ -142,6 +142,54 @@ def build_args(previous_trial=PREVIOUS_TRIAL, new_trial=NEW_TRIAL, prompt_type=P
 #  Run the pipeline
 # ============================================================================
 
+import requests
+import json
+
+def call_server(server_url, endpoint="", api_key="", payload={}):
+    """
+    Post: to server
+    """
+    url = f"{server_url}{endpoint}"
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+
+        return response.json()
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling OpenAI Server...: {e}")
+        return None
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        print(f"Error processing response: {e}")
+        return None
+
+
+def pause_sglang_server(host="localhost", port=30000,):
+    """POST /release_memory_occupation"""
+    server_url = f"{host}:{port}"
+    response = call_server(server_url, "/release_memory_occupation")
+    print(f"{response}")
+    
+def resume_sglang_server(host="localhost", port=30000,):
+    """POST /resume_memory_occupation"""
+    server_url = f"{host}:{port}"
+    response = call_server(server_url, "/resume_memory_occupation")
+    print(f"{response}")
+    
+
+
 def main_loop(run_config, parent_prompt_type):
 
     signature = get_signature(parent_prompt_type)
@@ -170,9 +218,13 @@ def main_loop(run_config, parent_prompt_type):
         # Inference
         if INFERENCE == 1:
             try:
+                if USE_ONLINE:
+                    resume_sglang_server()
                 print("Running the vllm inference file. use: run_inference_test_time_scaling_v2.py for sglang in run_main.py")
                 run(["python3", "robust_kernelbench/run_inference_test_time_scaling.py"] + base_args,
                     "Inference")
+                if USE_ONLINE:
+                    pause_sglang_server()
             except Exception as e:
                 print(f"INFERENCE DID NOT WORK. {e}")
                 print(f"Skipping this one: prev: {previous_trial}, new: {new_trial}, prompt: {prompt_type}")
