@@ -187,7 +187,18 @@ def resume_sglang_server(host="localhost", port=30000,):
     server_url = f"{host}:{port}"
     response = call_server(server_url, "/resume_memory_occupation")
     print(f"{response}")
+
+def pause_vllm_server(host="localhost", port=30000,):
+    """POST /release_memory_occupation"""
+    server_url = f"{host}:{port}"
+    response = call_server(server_url, "/sleep?level=1")
+    print(f"{response}")
     
+def resume_vllm_server(host="localhost", port=30000,):
+    """POST /resume_memory_occupation"""
+    server_url = f"{host}:{port}"
+    response = call_server(server_url, "/wake_up")
+    print(f"{response}")
 
 
 def main_loop(run_config, parent_prompt_type):
@@ -220,11 +231,13 @@ def main_loop(run_config, parent_prompt_type):
             try:
                 if USE_ONLINE:
                     resume_sglang_server()
+                    resume_vllm_server()
                 print("Running the vllm inference file. use: run_inference_test_time_scaling_v2.py for sglang in run_main.py")
                 run(["python3", "robust_kernelbench/run_inference_test_time_scaling.py"] + base_args,
                     "Inference")
                 if USE_ONLINE:
                     pause_sglang_server()
+                    pause_vllm_server()
             except Exception as e:
                 print(f"INFERENCE DID NOT WORK. {e}")
                 print(f"Skipping this one: prev: {previous_trial}, new: {new_trial}, prompt: {prompt_type}")
