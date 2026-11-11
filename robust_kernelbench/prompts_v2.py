@@ -1,4 +1,5 @@
 import os
+import sys
 import pandas as pd
 
 from datasets import load_from_disk, load_dataset
@@ -8,20 +9,33 @@ from functools import partial
 
 from pprint import pprint
 
-from utils.utils import (
+from robust_kernelbench.utils.utils import (
     get_folder_path,
     get_file_name
 )
 
-from utils.utils_inference import (
+from robust_kernelbench.utils.utils_inference import (
     create_joined_dataset,
     extract_code
 )
 
-from prompts_kb import (
+from robust_kernelbench.prompts_kb import (
     get_prompt_for_backend,
     get_prompt_kb_tts,
     get_prompt_kb_tts_multi_stage,
+)
+
+# Failure classification / error extraction / prompt selection now live in
+# `prompt_common` so that they are testable without rendering prompts, and so that
+# prompts_kb and this module stay focused on templates.  Re-exported for compatibility.
+# (`choose_prompt` is defined at the bottom of this module as a facade.)
+from robust_kernelbench.prompt_common import (  # noqa: F401
+    get_compile_error_info,
+    get_correctness_error_info,
+    get_generated_code,
+    get_runtime_error_info,
+    select_prompt_spec,
+    PromptSpec,
 )
 
 EXAMPLE_IMPLEMENTATION='''import torch
@@ -144,81 +158,8 @@ def generate_translation_prompt(reference_code, translation_lang="cuda", input_l
     return output_prompt
 
 
-def get_compile_error_info(sample):
-    """Gets info from sample"""
-    bug_info = sample.get("compilation_output_runtime", "")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("compilation_output_error","")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("main_output","")
-    
-    return bug_info
-
-
-def get_runtime_error_info(sample):
-    """Gets info from sample"""
-    bug_info = sample.get("correctness_output_error", "")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("correctness_output_traceback","")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("correctness_output","")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("main_output","")
-
-    return bug_info
-
-
-def get_correctness_error_info(sample):
-    """Gets info from sample"""
-    bug_info = sample.get("correctness_output_error", "")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("correctness_output_traceback","")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("correctness_output","")
-
-    if not bug_info or (str(bug_info) == "nan"):
-        bug_info = sample.get("main_output","")
-
-    return bug_info
-
-
-
-def get_generated_code(sample):
-    print(f"[PROMPT HELPER] generated code start")
-
-    try:
-        generated_code = sample["generation"]
-    except Exception as e:
-        print("[PROMPT HELPER] generated code not available")
-        print(f"{e}")
-        raise
-    
-    if not generated_code:
-        print("[PROMPT HELPER] generated code is empty")
-    
-    try:
-        print("[PROMPT HELPER] extracting code")
-        extracted_code = extract_code(generated_code)
-    except Exception as e:
-        print("[PROMPT HELPER] extraction failed")
-        print(f"{e}")
-        raise
-    
-    if extracted_code == "":
-        print("[PROMPT HELPER] extraction empty")
-        # print(f"[PROMPT HELPER] sample:")
-        # pprint(sample)
-
-    return extracted_code
-    
-
+# NOTE: `get_compile_error_info`, `get_runtime_error_info`, `get_correctness_error_info`
+# and `get_generated_code` are defined in `prompt_common` and imported above.
 
 
 INSTRUCTION_DEBUG = "You are an amazing CUDA Kernel Engineer. You will see a target pytorch implementation and a buggy CUDA implementation. The problem is that you will see a CUDA implementation that does not compile. Your job is implement a bug-free version."
@@ -492,123 +433,23 @@ def generate_kb_tts_prompt(sample, case, multi_stage=False, version="v1", **kwar
 #         )
 
 def choose_prompt(sample, trial, prompt_type="normal", run_clean_trial=False):
-    """Create a prompt func based on the inputs..."""
-    prompt_category = prompt_type
-    print(f"\n----\n[Prompt] Entering... trial={trial}, prompt_type={prompt_type}")
+    """Create a prompt func based on the inputs...
 
-    # TRIAL == 1
-    if trial == 1 or run_clean_trial:
-        print(f"[Prompt] We are in TRIAL 1, and we are using: prompt_type:{prompt_type}")
-        if prompt_type=="normal" or prompt_type == "single_stage" or prompt_type == "multi_stage":
-            prompt_func = generate_prompt
-        elif prompt_type=="kernelbench":
-            prompt_func = generate_kb_prompt
-        # elif prompt_type=="kernelbench_fewshot":
-        #     prompt_func = prompts.generate_improvement_prompt
-        # elif prompt_type=="accelopt":
-        #     prompt_func = prompts.generate_improvement_prompt
-        else:
-            print(f"[Prompt] This prompt_type does not exist: {prompt_type} falling back to kernelbench")
-            prompt_func = generate_kb_prompt
+    Facade over :func:`robust_kernelbench.prompt_common.choose_prompt`.  The decision
+    table (which failure gets which repair prompt) lives in `prompt_common`; this
+    module only supplies the template functions it resolves against.
 
-    # TRIAL > 1
-    elif trial > 1:
-        print(f"[Prompt] We are in TRIAL >1 ({trial}), and we are using: prompt_type:{prompt_type}")
-        if prompt_type=="normal":
-            prompt_func = generate_prompt
+    Returns ``(prompt_func, prompt_category)``.
+    """
+    from robust_kernelbench import prompt_common
 
-        # Single Stage
-        elif prompt_type=="single_stage":
-            if not sample.get("model_new_available", False):
-                prompt_category = "improve_compilation"
-                prompt_func = partial(generate_improvement_prompt_single_stage,case="compilation_error")
-            elif not sample.get("second_compile_success",False):
-                prompt_category = "improve_compilation_v2"
-                prompt_func = partial(generate_improvement_prompt_single_stage,case="runtime_error")
-            elif not sample.get("correctness_success",False):
-                prompt_category = "improve_debug"
-                prompt_func = partial(generate_improvement_prompt_single_stage,case="runtime_error")
-            elif not sample.get("correctness",False):
-                prompt_category = "improve_correctness"
-                prompt_func = partial(generate_improvement_prompt_single_stage,case="incorrect")
-            else:
-                prompt_category = "improve_runtime"
-                prompt_func = partial(generate_improvement_prompt_single_stage,case="improve")
-        
-        # Multi Stage
-        elif prompt_type=="multi_stage": #previous improve
-            if not sample.get("model_new_available", False):
-                prompt_category = "improve_compilation"
-                prompt_func = generate_debug_compilation_prompt
-            elif not sample.get("second_compile_success",False):
-                prompt_category = "improve_compilation_v2"
-                prompt_func = generate_debug_compilation_prompt
-            elif not sample.get("correctness_success",False):
-                prompt_category = "improve_debug"
-                prompt_func = generate_debug_runtime_prompt
-            elif not sample.get("correctness",False):
-                prompt_category = "improve_correctness"
-                prompt_func = generate_correctness_prompt
-            else:
-                prompt_category = "improve_runtime"
-                prompt_func = generate_improvement_prompt
-
-        # KernelBench TTS
-        elif prompt_type == "kernelbench":
-            if not sample.get("generation"):
-                prompt_category = "empty_generation"
-                prompt_func = generate_kb_prompt #default kernelbench prompt for clean attempt...
-            elif not sample.get("model_new_available", False):
-                prompt_category = "kb_debug_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="compilation_error")
-            elif not sample.get("second_compile_success",False):
-                prompt_category = "kb_debug2_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="compilation_error")
-            elif not sample.get("correctness_success",False):
-                prompt_category = "kb_runtime_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="runtime_error")
-            elif not sample.get("correctness",False):
-                prompt_category = "kb_correctness_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="incorrect")
-            else:
-                prompt_category = "kb_improve"
-                prompt_func = partial(generate_kb_tts_prompt,case="improve")
-
-        # Multi-Stage KernelBench TTS
-        # elif prompt_type == "kb_multi_stage" or prompt_type=="kb_multi_stage_v2":
-        elif "kb_multi_stage" in prompt_type:
-            kb_tts_version = "v1"
-            if prompt_type.endswith("v2"):
-                kb_tts_version="v2"
-
-            if not sample.get("generation"):
-                prompt_category = "empty_generation"
-                prompt_func = partial(generate_kb_tts_prompt,case="empty_generation",multi_stage=True,version=kb_tts_version)
-            elif not sample.get("model_new_available", False):
-                prompt_category = "kb_debug_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="compilation_error",multi_stage=True,version=kb_tts_version)
-            elif not sample.get("second_compile_success",False):
-                prompt_category = "kb_debug2_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="compilation_error",multi_stage=True,version=kb_tts_version)
-            elif not sample.get("correctness_success",False):
-                prompt_category = "kb_runtime_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="runtime_error",multi_stage=True,version=kb_tts_version)
-            elif not sample.get("correctness",False):
-                prompt_category = "kb_correctness_error"
-                prompt_func = partial(generate_kb_tts_prompt,case="incorrect",multi_stage=True,version=kb_tts_version)
-            else:
-                prompt_category = "kb_improve"
-                prompt_func = partial(generate_kb_tts_prompt,case="improve",multi_stage=True,version=kb_tts_version)
-
-        
-        else:
-            print(f"[Prompt] This prompt_type does not exist: {prompt_type} falling back to normal")
-            prompt_func = generate_prompt
-        
-    else:
-        raise Exception(f"Trial needs to be >= 1. Actually it is: {trial}")
-    print(f"[Prompt] Exiting... prompt_category={prompt_category}\n----")
-    return prompt_func, prompt_category
+    return prompt_common.choose_prompt(
+        sample,
+        trial=trial,
+        prompt_type=prompt_type,
+        run_clean_trial=run_clean_trial,
+        module=sys.modules[__name__],
+    )
 
 
 

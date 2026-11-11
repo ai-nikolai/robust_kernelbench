@@ -1,7 +1,12 @@
-# An Example command to invoke this file with a "already compiled option."
-# python /workspace/robust_kernelbench/robust_kernelbench/evaluate_single.py --new_path experiments/exp_v3/trial_1/code/66__sample_None0.py --original_path experiments/exp_v3/trial_1/kernel/66__sample__ref_kernel/66_conv_standard_3D__asymmetric_input__asymmetric_kernel.py --experiment exp_v3 --problem_id 66 --sample_id 0
-# python /workspace/robust_kernelbench/robust_kernelbench/evaluate_single.py --original_path experiments/exp_v3/trial_1/kernel/88__sample__ref_kernel/88_MinGPTNewGelu.py --new_path experiments/exp_v3/trial_1/code/88__sample_None0.py --experiment exp_v3 --problem_id 88 --sample_id 0
-# python /workspace/robust_kernelbench/robust_kernelbench/evaluate_single.py --original_path experiments/exp_v3/trial_1/kernel/98__sample__ref_kernel/98_KLDivLoss.py --new_path experiments/exp_v3/trial_1/code/98__sample_None0.py --experiment exp_v3 --problem_id 98 --sample_id 0 --build_dir_new experiments/exp_v3/trial_1/kernel/98__sample__solution_kernel
+# Example commands (evaluating an already-compiled kernel):
+# python -m robust_kernelbench.evaluate_single --experiment exp_v3 --problem_id 88 --sample_id 0 \
+#     --original_path experiments/exp_v3/trial_1/kernel/88__sample__ref_kernel/88_MinGPTNewGelu.py \
+#     --new_path experiments/exp_v3/trial_1/code/88__sample_0.py
+#
+# python -m robust_kernelbench.evaluate_single --experiment exp_v3 --problem_id 98 --sample_id 0 \
+#     --original_path experiments/exp_v3/trial_1/kernel/98__sample__ref_kernel/98_KLDivLoss.py \
+#     --new_path experiments/exp_v3/trial_1/code/98__sample_0.py \
+#     --build_dir_new experiments/exp_v3/trial_1/kernel/98__sample__solution_kernel
 
 import os
 import json
@@ -32,33 +37,36 @@ import traceback
 import tempfile
 from typing import Any
 
-
 import multiprocessing as mp
-from multiprocessing import Pool,Lock
+from multiprocessing import Pool, Lock
 
-from utils.utils import (
+from robust_kernelbench.logging_utils import get_logger, setup_logging
+from robust_kernelbench.utils.utils import (
     get_folder_path,
     get_file_name,
-    get_problem_id_from_file_name
+    get_problem_id_from_file_name,
+    read_file,
 )
 
-from utils.utils_data import (
+from robust_kernelbench.utils.utils_data import (
     CompileResult,
     KernelExecResult
 )
 
-from utils.utils_evaluate_common import (
+from robust_kernelbench.utils.utils_evaluate_common import (
     register_and_format_exception,
     format_exception_string,
     OutputCapture
 )
 
-from utils.utils_compile import (
+from robust_kernelbench.utils.utils_compile import (
     load_original_model_and_inputs,
     load_custom_model,
     # compile_and_get_output,
     # exec_and_get_output
 )
+
+logger = get_logger(__name__)
 
 if __name__ == '__main__':
     mp.set_start_method("spawn", force=True)  # Ensure spawn is used
@@ -69,18 +77,6 @@ level2_representative_subset_problem_ids = [1, 2, 8, 18, 23, 28, 33, 43]
 level3_representative_subset_problem_ids = [1, 5, 8, 11, 20, 33, 38, 43]
 
 CURRENT_DATETIME=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-def read_file(file_path) -> str:
-    if not os.path.exists(file_path):
-        print(f"File {file_path} does not exist")
-        return ""
-    
-    try:
-        with open(file_path, "r") as file:
-            return file.read()
-    except Exception as e:
-        print(f"Error reading file {file_path}: {e}")
-        return ""
 
 def get_dataframe_results(results):
     """Dataframe Results"""
@@ -98,6 +94,88 @@ def set_seed(seed: int):
     torch.cuda.manual_seed(seed)
 
 
+# ============================================================================
+#  Correctness tolerances
+# ============================================================================
+# The upstream harness compares every dtype with atol=rtol=1e-2, which is lax for
+# fp32/fp64 (it hides real numerical errors) and tight for bf16 (it produces spurious
+# failures).  The policy below picks a tolerance from the *reference output dtype*.
+# Explicit --atol/--rtol on the CLI always win, and `--atol 1e-02 --rtol 1e-02`
+# reproduces the historical behaviour exactly.
+DTYPE_TOLERANCES = {
+    "torch.float64": (1e-5, 1e-5),
+    "torch.float32": (1e-4, 1e-4),
+    "torch.float16": (1e-2, 1e-2),
+    "torch.bfloat16": (2e-2, 2e-2),
+    "torch.complex64": (1e-4, 1e-4),
+    "torch.complex128": (1e-5, 1e-5),
+}
+FALLBACK_TOLERANCE = (1e-2, 1e-2)
+
+
+def dtype_key(dtype) -> str:
+    """Stable, human-readable key for a torch dtype (e.g. ``"torch.bfloat16"``)."""
+    return str(dtype)
+
+
+def tolerance_for_dtype(dtype) -> tuple[float, float]:
+    """``(atol, rtol)`` for an output dtype.
+
+    Integer and boolean outputs are compared exactly.  Unknown dtypes fall back to the
+    historical 1e-2/1e-2.
+    """
+    if dtype is None:
+        return FALLBACK_TOLERANCE
+
+    try:
+        if not dtype.is_floating_point and not dtype.is_complex:
+            return (0.0, 0.0)
+    except AttributeError:  # pragma: no cover - non-torch dtype objects
+        return FALLBACK_TOLERANCE
+
+    return DTYPE_TOLERANCES.get(dtype_key(dtype), FALLBACK_TOLERANCE)
+
+
+def resolve_tolerances(dtype=None, atol=None, rtol=None) -> tuple[float, float]:
+    """Combine explicit overrides with the dtype policy.
+
+    * both explicit        -> use them
+    * one explicit         -> use it for that term, dtype policy for the other
+    * neither explicit     -> dtype policy
+    """
+    dtype_atol, dtype_rtol = tolerance_for_dtype(dtype)
+    final_atol = dtype_atol if atol is None else float(atol)
+    final_rtol = dtype_rtol if rtol is None else float(rtol)
+    return final_atol, final_rtol
+
+
+# ============================================================================
+#  L2 / cache flushing for timing
+# ============================================================================
+# Timing a tiny kernel twice in a row lets the second run read its inputs straight out of
+# L2, which flatters small kernels badly.  KernelBench's own harness does not flush, so
+# speedups against a cache-warm reference are optimistic.  We allocate one throw-away
+# buffer and zero it before every timed trial (outside the timed region) to evict it.
+L2_FLUSH_BYTES = 256 * 1024 * 1024  # comfortably larger than the L2 of any shipping GPU
+
+
+def make_l2_flush_buffer(device=None, size_bytes: int = L2_FLUSH_BYTES):
+    """Allocate the buffer used to evict L2.  Returns ``None`` on failure (CPU-only runs)."""
+    try:
+        return torch.empty(size_bytes, dtype=torch.int8, device=device)
+    except Exception as e:  # pragma: no cover - out-of-memory / no CUDA
+        logger.warning("could not allocate L2 flush buffer (%s); timing will not be cache-cold", e)
+        return None
+
+
+def flush_l2_cache(buffer) -> None:
+    """Zero the flush buffer so the next kernel cannot find stale data in L2."""
+    if buffer is None:
+        return
+    buffer.zero_()
+
+
+
 def time_execution_with_cuda_event(
     kernel_fn: callable,
     *args,
@@ -105,6 +183,8 @@ def time_execution_with_cuda_event(
     num_trials: int = 10,
     verbose: bool = True,
     device: torch.device = None,
+    flush_l2: bool = True,
+    flush_buffer=None,
     ) -> list[float]:
     """
     Time a CUDA kernel function over multiple trials using torch.cuda.Event
@@ -115,6 +195,8 @@ def time_execution_with_cuda_event(
         num_trials: Number of timing trials to run
         verbose: Whether to print per-trial timing info
         device: CUDA device to use, if None, use current device
+        flush_l2: Evict L2 before each timed trial (measurements become cache-cold)
+        flush_buffer: Pre-allocated flush buffer; allocated here when omitted
 
     Returns:
         List of elapsed times in milliseconds
@@ -124,21 +206,30 @@ def time_execution_with_cuda_event(
             print(f"Using current device: {torch.cuda.current_device()}")
         device = torch.cuda.current_device()
 
+    if flush_l2 and flush_buffer is None:
+        flush_buffer = make_l2_flush_buffer(device=device)
+
     # Warm ups
     for _ in range(num_warmup):
         kernel_fn(*args)
         torch.cuda.synchronize(device=device)
 
     print(
-        f"[Profiling] Using device: {device} {torch.cuda.get_device_name(device)}, warm up {num_warmup}, trials {num_trials}"
+        f"[Profiling] Using device: {device} {torch.cuda.get_device_name(device)}, warm up {num_warmup}, trials {num_trials}, flush_l2={flush_l2}"
     )
     elapsed_times = []
+
+    # drop whatever the warm-up left in L2 before the first measured trial
+    flush_l2_cache(flush_buffer)
 
     # Actual trials
     for trial in range(num_trials):
         # create event marker default is not interprocess
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
+
+        # Evict L2 *outside* the timed region, so each trial is cache-cold.
+        flush_l2_cache(flush_buffer)
 
         start_event.record()
         kernel_fn(*args)
@@ -234,6 +325,8 @@ def run_and_check_correctness(
     verbose=False,
     seed=42,
     device=None,
+    atol=None,
+    rtol=None,
     ) -> KernelExecResult:
     """
     run the model and check correctness,
@@ -241,6 +334,7 @@ def run_and_check_correctness(
     this is all on GPU, requiring cuda device and transfer .cuda()
 
     num_correct_trials: run the evalutation multiple times with (ideally) different random inputs to ensure correctness
+    atol/rtol: explicit tolerances; when None they are chosen from the output dtype
     """
     pass_count = 0
     exception_str = ""
@@ -299,14 +393,22 @@ def run_and_check_correctness(
                     return kernel_exec_result
 
                 # check output value difference
+                # Tolerances come from the reference output dtype unless overridden.
+                trial_atol, trial_rtol = resolve_tolerances(output.dtype, atol=atol, rtol=rtol)
+                metadata["atol"] = trial_atol
+                metadata["rtol"] = trial_rtol
+                metadata["tolerance_dtype"] = dtype_key(output.dtype)
                 if not torch.allclose(
-                    output, output_new, atol=1e-02, rtol=1e-02
+                    output, output_new, atol=trial_atol, rtol=trial_rtol
                 ):  # fail
                     max_diff = torch.max(torch.abs(output - output_new)).item()
                     avg_diff = torch.mean(torch.abs(output - output_new)).item()
                     metadata.setdefault("max_difference", []).append(f"{max_diff:.6f}")
                     metadata.setdefault("avg_difference", []).append(f"{avg_diff:.6f}")
-                    exception_str = f"Output mismatch: max difference is: {max_diff:.6f}"
+                    exception_str = (
+                        f"Output mismatch: max difference is: {max_diff:.6f} "
+                        f"(atol={trial_atol}, rtol={trial_rtol}, dtype={dtype_key(output.dtype)})"
+                    )
                     metadata["correctness_issue"] = "Output mismatch"
                     if verbose:
                         print(f"[FAIL] trial {trial}: Output mismatch")
@@ -363,18 +465,23 @@ def eval_kernel_against_ref(
     original_model_src: str,
     custom_model_src: str,
     seed_num: int = 42,
-    num_correct_trials: int = 1,
+    num_correct_trials: int = 5,
     num_perf_trials: int = 10,
     verbose: bool = False,
     measure_performance: bool = False,
     build_dir: os.PathLike = None,
     build_dir_new: os.PathLike = None,
     device: torch.device = None, # have to run on GPU
+    atol: float | None = None,
+    rtol: float | None = None,
+    flush_l2: bool = True,
     ) -> KernelExecResult:
     """
     Evaluate the custom kernel against the original model
 
     num_correct_trials: number of trials to initialize different random inputs; correctness pass only if all trials pass
+    atol/rtol: explicit correctness tolerances; None means "decide from the output dtype"
+    flush_l2: evict L2 between timing trials (cache-cold measurements)
     num_perf_trials: run the evalutation many times to take the average
     device: GPU (cuda) device to run the evalutation on
     """
@@ -676,6 +783,8 @@ def eval_kernel_against_ref(
             verbose=verbose,
             seed=seed_num,
             device=device,
+            atol=atol,
+            rtol=rtol,
         )
         kernel_exec_result.runtime_success=True
         kernel_exec_result.loading_success=True
@@ -732,6 +841,13 @@ def eval_kernel_against_ref(
         )  # skip further steps
     
     custom_timing_success=False
+    # NOTE: KernelExecResult is a pydantic model, which *copies* the metadata dict on
+    # validation, so post-construction metadata must be written through the result object.
+    metadata["flush_l2"] = bool(flush_l2)
+    kernel_exec_result.metadata["flush_l2"] = bool(flush_l2)
+    # The L2-eviction buffer is allocated lazily (only if we actually time something) and
+    # reused for both the kernel and its reference, so both are measured cache-cold.
+    flush_buffer = None
     # Measure Performance [Optional] | conditioned on compilation + correctness + no exception so far
     if measure_performance:
         try:
@@ -749,12 +865,17 @@ def eval_kernel_against_ref(
                 model_new = custom_model.cuda(device=device)
                 torch.cuda.synchronize(device=device)
 
+                if flush_l2 and flush_buffer is None:
+                    flush_buffer = make_l2_flush_buffer(device=device)
+
                 elapsed_times = time_execution_with_cuda_event(
                     model_new,
                     *inputs,
                     num_trials=num_perf_trials,
                     verbose=verbose,
                     device=device,
+                    flush_l2=flush_l2,
+                    flush_buffer=flush_buffer,
                 )
                 runtime_stats = get_timing_stats(elapsed_times, device=device)
 
@@ -815,6 +936,8 @@ def eval_kernel_against_ref(
                     num_trials=num_perf_trials,
                     verbose=verbose,
                     device=device,
+                    flush_l2=flush_l2,
+                    flush_buffer=flush_buffer,
                 )
                 runtime_original_stats = get_timing_stats(elapsed_times_original, device=device)
 
@@ -840,18 +963,32 @@ def eval_kernel_against_ref(
 
 
 # Create a wrapper function for multiprocessing
-def eval_wrapper(reference_src, custom_src, build_dir, build_dir_new, device):
+def eval_wrapper(
+    reference_src,
+    custom_src,
+    build_dir,
+    build_dir_new,
+    device,
+    num_correct_trials=5,
+    num_perf_trials=3,
+    atol=None,
+    rtol=None,
+    flush_l2=True,
+):
     return eval_kernel_against_ref(
         original_model_src = reference_src,
         custom_model_src = custom_src,
         seed_num = 42,
-        num_correct_trials = 3,
-        num_perf_trials = 3,
+        num_correct_trials = num_correct_trials,
+        num_perf_trials = num_perf_trials,
         verbose  = True,
         measure_performance = True,
         build_dir = build_dir,
         build_dir_new = build_dir_new,
         device = device, # have to run on GPU
+        atol = atol,
+        rtol = rtol,
+        flush_l2 = flush_l2,
     )
 
 def evaluate_single(
@@ -861,7 +998,7 @@ def evaluate_single(
     build_dir_new=None, 
     # other
     seed_num = 42,
-    num_correct_trials = 3,
+    num_correct_trials = 5,
     num_perf_trials = 3,
     verbose  = True,
     measure_performance = True,
@@ -872,6 +1009,9 @@ def evaluate_single(
     trial=1,
     problem_id=None,
     sample_id=0,
+    atol=None,
+    rtol=None,
+    flush_l2=True,
     ):
     print(f"[Eval Main Func]\nbuild_dir_new:\t{build_dir_new}\nnew_path:\t{new_path}.")
 
@@ -897,7 +1037,18 @@ def evaluate_single(
         # exec(custom_src, {})
 
         # Run on this device
-        results = eval_wrapper(reference_src, custom_src, build_dir, build_dir_new, device,)
+        results = eval_wrapper(
+            reference_src,
+            custom_src,
+            build_dir,
+            build_dir_new,
+            device,
+            num_correct_trials=num_correct_trials,
+            num_perf_trials=num_perf_trials,
+            atol=atol,
+            rtol=rtol,
+            flush_l2=flush_l2,
+        )
 
         # # Run in a separate process
         # with Pool(processes=1) as pool:
@@ -913,16 +1064,18 @@ def evaluate_single(
             out_results= [output]       
 
         except Exception as e:
-            print(f"[Eval Main Func] Error PROBLEM EVAL t:{trial} p:{problem_id} s:{sample_id}]We couldn't get a results\n----\n")
-            print(e)
+            logger.error(
+                "could not serialise the result for trial=%s pid=%s sid=%s: %s", trial, problem_id, sample_id, e
+            )
+            logger.debug("traceback:\n%s", traceback.format_exc())
             output = KernelExecResult().__dict__
             output["problem_id"] = problem_id
             output["sample_id"] = sample_id
             out_results= [output]    
 
     except Exception as e:
-        print(f"[Eval Main Func] Error PROBLEM EVAL t:{trial} p:{problem_id} s:{sample_id}]FULL FAIL\n====\n")
-        print(e)
+        logger.error("evaluation failed entirely for trial=%s pid=%s sid=%s: %s", trial, problem_id, sample_id, e)
+        logger.debug("traceback:\n%s", traceback.format_exc())
         output = KernelExecResult().__dict__
         output["problem_id"] = problem_id
         output["sample_id"] = sample_id
@@ -935,26 +1088,22 @@ def evaluate_single(
         results_df = get_dataframe_results(out_results)
 
         if os.path.exists(eval_filename):
-            print(f"[Eval Main Func] Writing Results file {eval_filename}. Appending.")
+            logger.debug("appending results to %s", eval_filename)
             results_df.to_csv(os.path.join(eval_filename), index=False, header=False, mode="a")
 
         else:
-            print(f"[Eval Main Func] Writing Results file {eval_filename}. New.")
+            logger.debug("writing new results file %s", eval_filename)
             results_df.to_csv(os.path.join(eval_filename), index=False)
-        print("[Eval Main Func] Writing to file done, successfully. ")
 
     except Exception as e:
-        print("[Eval Main Func] Error with writing to file.")
-        print(f"[Eval Main Func] {eval_filename}")
-        print(f"Exception:\n{e}")
+        logger.error("could not write results to %s: %s", locals().get("eval_filename", "?"), e)
+        logger.debug("traceback:\n%s", traceback.format_exc())
 
 
-def get_args():
+def get_args(argv=None):
     import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--num_samples", type=int, default=1, help="Num of Parallel responses")
-    parser.add_argument("--prompt_type", type=str, default="normal", help="Which prompt to use...")
+    parser = argparse.ArgumentParser(description="Evaluate a single generated kernel against its reference model.")
     parser.add_argument("--experiment", type=str, default="exp_test_run", help="experiment names")
     parser.add_argument("--level", type=int, default=1, help="Which level to run...")
 
@@ -963,21 +1112,46 @@ def get_args():
     parser.add_argument("--build_dir", type=str, default=None, help="Build directory for original model")
     parser.add_argument("--build_dir_new", type=str, default=None, help="Build directory for new model")
     parser.add_argument("--seed_num", type=int, default=42, help="Random seed")
-    parser.add_argument("--num_correct_trials", type=int, default=3, help="Number of correctness trials")
+    parser.add_argument(
+        "--num_correct_trials",
+        type=int,
+        default=5,
+        help="Number of independently seeded correctness trials (all must pass).",
+    )
     parser.add_argument("--num_perf_trials", type=int, default=3, help="Number of performance trials")
+    parser.add_argument(
+        "--atol",
+        type=float,
+        default=None,
+        help="Absolute tolerance. Default: chosen from the output dtype (fp64 1e-5, fp32 1e-4, fp16 1e-2, bf16 2e-2).",
+    )
+    parser.add_argument(
+        "--rtol",
+        type=float,
+        default=None,
+        help="Relative tolerance. Default: chosen from the output dtype (see --atol).",
+    )
+    parser.add_argument(
+        "--flush_l2",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Evict L2 before each timed trial so measurements are cache-cold (default: on).",
+    )
     parser.add_argument("--verbose", action="store_true", default=True, help="Verbose output")
     # parser.add_argument("--measure_performance", action="store_true", default=True, help="Measure performance")
     parser.add_argument("--problem_id", type=int, default=None, help="Problem ID")
     parser.add_argument("--sample_id", type=int, default=0, help="Sample ID")
     parser.add_argument("--trial", type=int, default=1, help="Which trial you are currently running...")
+    parser.add_argument("--log-level", type=str, default="INFO", help="Logging level (DEBUG/INFO/WARNING/...).")
 
     # TODO: add lora support
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return args
 
 if __name__=="__main__":
     args = get_args()
+    setup_logging(args.log_level, force=True)
     print("[Eval Main] - Entered Evaluate single...")
     evaluate_single(
         original_path=args.original_path,
@@ -994,6 +1168,9 @@ if __name__=="__main__":
         trial=args.trial,
         problem_id=args.problem_id,
         sample_id=args.sample_id,
+        atol=args.atol,
+        rtol=args.rtol,
+        flush_l2=args.flush_l2,
     )
     print("[Eval Main] - Exiting...")
   
@@ -1002,15 +1179,15 @@ if __name__=="__main__":
 # orginal_path = experiments/exp_local_v3/trial_1/kernel/9__sample__ref_kernel/9_Tall_skinny_matrix_multiplication_.py
 # new_path = experiments/exp_local_v3/trial_1/code/9__sample_None0.py
 
-# python3 robust_kernelbench/evaluate_single.py \
+# python3 -m robust_kernelbench.evaluate_single \
 # --original_path "experiments/exp_local_v3/trial_1/kernel/98__sample__ref_kernel/98_KLDivLoss.py" \
-# --new_path experiments/exp_local_v3/trial_1/code/98__sample_None0.py \
+# --new_path experiments/exp_local_v3/trial_1/code/98__sample_0.py \
 # --experiment exp_local_v3
 
 """
 # EXAMPLE USAGE:
 
-python3 robust_kernelbench/evaluate_single.py \
+python3 -m robust_kernelbench.evaluate_single \
 --original_path "experiments/exp_slurm_v4_6_tts_Qwen2_5_Coder_7B_Instruct_20260107_150105/trial_2/kernel/39__sample__ref_kernel/39_L2Norm_.py" \
 --new_path experiments/exp_local_v3/trial_1/code/39__sample_0.py \
 --experiment exp_slurm_v4_6_tts_Qwen2_5_Coder_7B_Instruct_20260107_150105
