@@ -1,23 +1,27 @@
-import os
-from pathlib import Path
+"""Analysis-side path helpers.
 
+This module used to carry its own copy of ``get_folder_path`` (identical to the one in
+``robust_kernelbench/utils/utils.py``, and already drifting).  It now simply re-exports the
+shared implementation so there is a single definition of the experiments layout.
 
-VERSION="0.0.2"
+Existing analysis scripts no longer import through this module; import from
+:mod:`robust_kernelbench.utils.utils` directly.
+"""
 
-def get_folder_path(experiment_name, trial=None, postfix=None, prefix="experiments"):
-    """Creates the folder and returns path"""    
-    if trial:
-        trial_name = f"trial_{trial}"
-        folder_path = os.path.join(experiment_name,trial_name)
-    else:
-        folder_path = os.path.join(experiment_name)
-    
-    if postfix:
-        folder_path = os.path.join(folder_path, postfix)
-    
-    if prefix:
-        folder_path = os.path.join(prefix, folder_path)
+from robust_kernelbench.utils.utils import (  # noqa: F401
+    get_file_name,
+    get_folder_path,
+    get_problem_id_from_file_name,
+    read_file,
+    write_code,
+    construct_generation_dict,
+)
 
-    Path(folder_path).mkdir(parents=True, exist_ok=True)
-
-    return folder_path
+__all__ = [
+    "get_folder_path",
+    "get_file_name",
+    "get_problem_id_from_file_name",
+    "read_file",
+    "write_code",
+    "construct_generation_dict",
+]

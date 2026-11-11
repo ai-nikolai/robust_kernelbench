@@ -20,7 +20,7 @@ from pprint import pprint
 
 from tqdm import tqdm
 
-from utils import (
+from robust_kernelbench.utils.utils import (
     get_folder_path,
 )
 
@@ -58,23 +58,31 @@ def output_analysis(df):
         "correctness_success": int,
         "timing_success": int,
     })
+    # Denominator for the "global" rates is the number of rows actually
+    # evaluated, not an assumed 100: a level has 100 problems, but a trial can
+    # legitimately end with fewer evaluation rows (88 for v10_1, 94 for v9_7),
+    # which made every /100 rate wrong.
+    n_rows = len(df)
     out_dict["count"] = df["compiled"].count()
     out_dict["compiled"] = df["compiled"].mean()
 
     out_dict["runtime_success"] = df["runtime_success"].mean()
     out_dict["loading_success"] = df["loading_success"].mean()
-    out_dict["correctness_success"] = df["correctness_success"].mean()
+    # `correctness_success` records whether check_correctness() ran, NOT whether
+    # the kernel is correct (utils_data.py:29).  It is reported as `check_ran`
+    # so it cannot be mistaken for accuracy; `correctness` is the real metric.
+    out_dict["check_ran"] = df["correctness_success"].mean()
     out_dict["timing_success"] = df["timing_success"].mean()
 
     out_dict["correctness"] = df["correctness"].mean()
 
 
-    out_dict["compiled_global"] = df["compiled"].sum() / 100
-    out_dict["runtime_success_global"] = df["runtime_success"].sum()/ 100
-    out_dict["loading_success_global"] = df["loading_success"].sum()/ 100
-    out_dict["correctness_success_global"] = df["correctness_success"].sum()/ 100
-    out_dict["timing_success_global"] = df["timing_success"].sum()/ 100
-    out_dict["correctness_global"] = df["correctness"].sum()/ 100
+    out_dict["compiled_global"] = df["compiled"].sum() / n_rows
+    out_dict["runtime_success_global"] = df["runtime_success"].sum()/ n_rows
+    out_dict["loading_success_global"] = df["loading_success"].sum()/ n_rows
+    out_dict["check_ran_global"] = df["correctness_success"].sum()/ n_rows
+    out_dict["timing_success_global"] = df["timing_success"].sum()/ n_rows
+    out_dict["correctness_global"] = df["correctness"].sum()/ n_rows
 
     df_compiled = df[df["compiled"] == 1]
     # out_dict["compiled_count"] = len(df_compiled)
@@ -114,18 +122,21 @@ def output_analysis(df):
 
     # normalised , overall
     out_dict["speedup_overall_normalised"] = out_dict["speedup_overall_count"] / total_count
-    out_dict["speedup_overall_global"] = out_dict["speedup_overall_count"] / 100.0
+    out_dict["speedup_overall_global"] = out_dict["speedup_overall_count"] / n_rows
 
     out_dict["fast_0_normalised"] = out_dict["fast_0_count"] / total_count
-    out_dict["fast_0_global"] = out_dict["fast_0_count"] / 100.0
+    out_dict["fast_0_global"] = out_dict["fast_0_count"] / n_rows
 
     out_dict["fast_1_normalised"] = out_dict["fast_1_count"] / total_count
-    out_dict["fast_1_global"] = out_dict["fast_1_count"] / 100.0
+    out_dict["fast_1_global"] = out_dict["fast_1_count"] / n_rows
 
     out_dict["fast_2_normalised"] = out_dict["fast_2_count"] / total_count
-    out_dict["fast_2_global"] = out_dict["fast_2_count"] / 100.0
+    out_dict["fast_2_global"] = out_dict["fast_2_count"] / n_rows
 
-    out_dict["compiled_global"] = out_dict["count"] / 100.0
+    # NOTE: this used to overwrite compiled_global with count/100, replacing the
+    # real compiled rate with a coverage number.  The coverage metric now has its
+    # own name so compiled_global keeps its value.
+    out_dict["coverage_global"] = out_dict["count"] / n_rows
 
     return out_dict
 
@@ -139,11 +150,13 @@ def output_analysis_compilation(df):
         "runtime_success" : int,
         "model_new_available" : int,
     })
+    # Same denominator rule as the evaluation metrics: the real row count.
+    n_rows = len(df)
     out_dict["count"] = df["compiled"].count()
     try:
         out_dict["format_passed"] = df["format_passed"].mean()
         out_dict["format_passed_count"] = df["format_passed"].sum()
-        out_dict["format_passed_global"] = df["format_passed"].sum() / 100.0
+        out_dict["format_passed_global"] = df["format_passed"].sum() / n_rows
 
     except:
         print("[`format_passed` not present]")
@@ -158,10 +171,10 @@ def output_analysis_compilation(df):
     out_dict["runtime_success_count"] = df["runtime_success"].sum()
     out_dict["model_new_available_count"] = df["model_new_available"].sum()
 
-    out_dict["pre_compiled_global"] = df["pre_compiled"].sum() / 100.0
-    out_dict["compiled_global_compiled"] = df["compiled"].sum() / 100.0
-    out_dict["runtime_success_global_compiled"] = df["runtime_success"].sum() / 100.0
-    out_dict["model_new_available_global"] = df["model_new_available"].sum() / 100.0
+    out_dict["pre_compiled_global"] = df["pre_compiled"].sum() / n_rows
+    out_dict["compiled_global_compiled"] = df["compiled"].sum() / n_rows
+    out_dict["runtime_success_global_compiled"] = df["runtime_success"].sum() / n_rows
+    out_dict["model_new_available_global"] = df["model_new_available"].sum() / n_rows
 
     return out_dict
 
@@ -301,9 +314,11 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
             "compiled_global",
             "runtime_success_global",
             "loading_success_global",
-            "correctness_success_global",
-            # "timing_success_global",
+            # Accuracy first: `correctness` is the real pass rate.
             "correctness_global",
+            # `check_ran` only says check_correctness() executed.
+            "check_ran_global",
+            # "timing_success_global",
             # "runtime",
             # "runtime_original",
             # "speedup_overall_global",
@@ -328,9 +343,11 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
             "compiled_global",
             "runtime_success_global",
             "loading_success_global",
-            "correctness_success_global",
-            # "timing_success_global",
+            # Accuracy first: `correctness` is the real pass rate.
             "correctness_global",
+            # `check_ran` only says check_correctness() executed.
+            "check_ran_global",
+            # "timing_success_global",
             # "runtime",
             # "runtime_original",
             # "speedup_overall_global",
