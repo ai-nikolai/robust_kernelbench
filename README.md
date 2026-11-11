@@ -1,228 +1,284 @@
 # Robust KernelBench
 
-This is generally a robust version inspired by KernelBench (https://github.com/ScalingIntelligence/KernelBench). 
+This is generally a robust version inspired by KernelBench (https://github.com/ScalingIntelligence/KernelBench).
 This code fixes a lot of the runtime problems the original code had: (Like fixing the GPU errors that go unoticed and corrupt the final results, adding distributed compilation, and adding more detailed metrics.)
 
-This repo is also for the paper: "FIL Hypothesis"... (Citation coming soon). 
+This repo is also for the paper: "FIL Hypothesis"... (Citation coming soon).
 
-## Getting started:
-1. Installation
+---
+
+## What changed (v0.1.0)
+
+The pipeline is now an installable package with a real CLI, a test suite and CI:
+
+| Before | Now |
+| --- | --- |
+| `python3 robust_kernelbench/run_main.py` (from the repo root only) | `python -m robust_kernelbench.run_main` or the `robust-kernelbench` console script, after `pip install -e .` |
+| `from utils.utils import ...` (cwd-relative) | package-absolute imports; works from any directory |
+| one 650-line file per compile variant, two near-identical inference files | one `compile_driver` / `inference_common`; the entry points are thin wrappers |
+| fixed `atol=rtol=1e-2` for every dtype | dtype-aware tolerances (fp64 1e-5, fp32 1e-4, fp16 1e-2, bf16 2e-2), overridable |
+| 1 correctness trial by default | 5 correctness trials by default |
+| cache-warm timing (small kernels flattered) | L2 is evicted between timing trials (`--flush_l2`, on by default) |
+| `NameError` when no jobs were passed | clean usage error, exit code 2 |
+| failed inference silently skipped the whole round | logged with a traceback, recorded, `--continue_on_error` to opt into skipping |
+| both SGLang *and* vLLM pause/resume endpoints called every time | `--serving_backend {sglang,vllm,none}` |
+| `--tensor_parallel_size` hardcoded to 1 in the orchestrator | configurable, defaults to 1 |
+| no tests, no CI | `pytest` suite + GitHub Actions (GPU tests skip on CPU runners) |
+| `python` from `$PATH` in subprocesses | `sys.executable`, and `-m` module invocation |
+
+---
+
+## Getting started
+
+### Installation
+
 ```bash
-# ENV for the model (sglang)
+# ENV for the model (sglang / vllm serving)
 conda create -n env_model python=3.11
 conda activate env_model
 pip3 install -r requirements_sglang.txt
 
-# ENV for kernelbench (newer requirements breaks)
+# ENV for kernelbench (newer requirements break)
 conda create -n env_kb2 python=3.11
 conda activate env_kb2
 pip3 install -r requirements.txt
-# conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this. 
+pip3 install -e .              # install the package itself (editable)
+# conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this.
 # Maybe needed?
 # conda install cuda-toolkit
 
-# OTHER:
-# conda install -c conda-forge gxx_linux-64 gcc_linux-64 make #you don't really need this, but it should resolve the cxx warning.
-# export PIP_CACHE_DIR=/workspace/cache
-# export TMPDIR=/workspace/cache
+# OPTIONAL: analysis + dev tooling
+pip3 install -e ".[analysis,dev]"
 ```
 
-## Running the code:
-1. Multi round end-2-end scripts (Slurm):
-```bash
-bash ./scripts/slurm_job_v2.sh
-```
+`pip install -e .` is what makes `python -m robust_kernelbench.<module>` work from any
+directory. Running the scripts straight from a checkout still works too, as long as the
+repository root is the current directory.
 
-2. (older) End-2-end scripts: (1. Generate Kernels, 2. Compile Kernels (distributed), 3. Evaluate Kernels)
-```bash
-bash ./scripts/run_tsp_jobs.sh #local server (see task-spooler below)
-# OR
-bash ./scripts/run_slurm_jobs.sh
-```
-
-### Sequentially running each part seperately
-0. Running all in one go (newer):
-```bash
-CUDA_VISIBLE_DEVICES=2
-jobs=(
- "1 1 kernelbench"
-)
-python3 robust_kernelbench/run_main.py --version "v9_4" --model Qwen3_Coder_30B_A3B_Instruct     --parent_prompt_type "kernelbench" --num_samples 1 "${jobs[@]}" > out.txt
-```
-
-1. Model Inference scripts (1. Generate Kernels)
-```bash
-#This is the command that will be run...
-python3 robust_kernelbench/run_inference_test_time_scaling.py --experiment_name "exp_local_1" --num_items 3 --trial 1
-```
-
-2. Compilation: (2. Compile Kernels (distributed / sequential))
-```bash
-python3 robust_kernelbench/compile_all_sequential.py --experiment_name exp_local_1 --trial 1 --num_processes 8
-```
-
-```bash
-python3 robust_kernelbench/compile_all.py --experiment_name exp_local_1 --trial 1 --num_processes 8
-```
-
-3. Evaluation: (3. Benchmark and Evaluate Kernels)
-```bash
-python3 robust_kernelbench/evaluate_all.py --experiment_name "exp_local_1" --trial 1
-```
-
-
-## Running the Analysis:
-1. Installation:
-```bash
-pip3 install -r requirements_analysis.txt
-```
-
-2. Running:
-See `README_ANALYSIS.md`
-
+> **Note on invocation style.** Use `python -m robust_kernelbench.<module>` (or the
+> `robust-kernelbench` console script) rather than `python3 robust_kernelbench/<module>.py`.
+> When you point Python at a file, it puts that file's *directory* on `sys.path`, so
+> `import robust_kernelbench` fails unless the package has been installed. With
+> `pip install -e .` both styles work; without it, only `-m` from the repo root works.
 
 ---
+
+## Running the code
+
+### 1. Multi-round end-to-end (Slurm)
+
+```bash
+# everything can be overridden from the environment
+MODEL_NAME=Qwen/Qwen3-Coder-30B-A3B-Instruct VERSION=v9_8 bash scripts/slurm_job_v2.sh
+```
+
+### 2. Single-node (local server + pipeline)
+
+```bash
+MODEL_NAME=Qwen/Qwen3-Coder-Next NUM_ITEMS=5 SERVING_BACKEND=sglang bash scripts/run_main.sh
+```
+
+### 3. All in one go (no server management)
+
+```bash
+CUDA_VISIBLE_DEVICES=2 python -m robust_kernelbench.run_main \
+    --version v9_4 \
+    --model_name Qwen3_Coder_30B_A3B_Instruct \
+    --parent_prompt_type kernelbench \
+    --num_samples 1 \
+    --tensor_parallel_size 2 \
+    --serving_backend sglang \
+    --num_correct_trials 5 \
+    "1 1 kernelbench"
+```
+
+The trailing arguments are jobs of the form `<previous_trial> <new_trial> <prompt_type>`.
+Passing no jobs is a usage error (exit code 2).
+
+### 4. Running the stages separately
+
+```bash
+# 1. Generate kernels (vLLM entry point; the _v2 variant uses SGLang)
+python -m robust_kernelbench.run_inference_test_time_scaling \
+    --experiment_name exp_local_1 --trial 1 --num_items 3
+
+# 2a. Compile (parallel, multiprocessing pool)
+python -m robust_kernelbench.compile_all \
+    --experiment_name exp_local_1 --trial 1 --num_processes 8
+
+# 2b. Compile (sequential, one crash-isolated subprocess per kernel)
+python -m robust_kernelbench.compile_all_sequential \
+    --experiment_name exp_local_1 --trial 1
+
+# 3. Evaluate
+python -m robust_kernelbench.evaluate_all \
+    --experiment_name exp_local_1 --trial 1 \
+    --num_correct_trials 5 --flush_l2
+```
+
+---
+
+## Key CLI options
+
+| Flag | Applies to | Meaning |
+| --- | --- | --- |
+| `--serving_backend {sglang,vllm,none}` | `run_main` | which server's pause/resume endpoints to call between stages (`none` skips) |
+| `--tensor_parallel_size N` | `run_main`, inference | tensor-parallel size for the local engine |
+| `--num_correct_trials N` | `run_main`, `evaluate_all`, `evaluate_single` | independently seeded correctness trials; all must match (default 5) |
+| `--atol` / `--rtol` | `run_main`, `evaluate_all`, `evaluate_single` | explicit tolerances; default is chosen from the output dtype. `--atol 1e-2 --rtol 1e-2` reproduces the historical behaviour |
+| `--flush_l2` / `--no-flush_l2` | `run_main`, `evaluate_all`, `evaluate_single` | evict L2 before each timed trial (default: on) |
+| `--continue_on_error` | `run_main` | keep running remaining jobs after a failure (exit code still non-zero) |
+| `--compile {0,1,2}` | `run_main` | 0=skip, 1=parallel, 2=sequential |
+| `--log-level` | all | `DEBUG`/`INFO`/`WARNING`/... (logs go to stderr, tqdm keeps stdout) |
+| `--reset_experiments` | `run_main` | delete the experiment directory first |
+
+### Correctness and timing policy
+
+* **Tolerances** are derived from the *reference output dtype*: `float64` 1e-5,
+  `float32` 1e-4, `float16` 1e-2, `bfloat16` 2e-2, integer/bool exact. The chosen values
+  are recorded in the evaluation metadata (`atol`, `rtol`, `tolerance_dtype`) so results
+  stay auditable.
+* **L2 flushing**: a throw-away 256 MB buffer is zeroed before every timed trial (outside
+  the timed region), for both the kernel and its reference, so small kernels are not
+  measured cache-warm. `metadata["flush_l2"]` records whether it was enabled.
+
+---
+
+## Running the analysis
+
+```bash
+pip3 install -e ".[analysis]"
+bash scripts/run_analysis.sh                 # VERSION=v9_7 T1=4 T2=5 by default
+```
+
+See `README_ANALYSIS.md` for the individual steps.
+
+---
+
+## Housekeeping
+
+`experiments/` grows without bound. Prune it — **dry-run unless `--delete`**:
+
+```bash
+python scripts/prune_experiments.py --keep-last 5                  # show what would go
+python scripts/prune_experiments.py --older-than-days 30 --delete  # actually remove
+```
+
+---
+
+## Development
+
+```bash
+pip3 install -e ".[dev]"
+
+python -m compileall -q robust_kernelbench analysis tests conftest.py -x 'kb_prompts'
+ruff check robust_kernelbench analysis tests conftest.py
+pytest -q
+```
+
+`robust_kernelbench/kb_prompts/*.py` are prompt *templates* (placeholder pseudo-code that is
+rendered as text and never imported), which is why `compileall`/`ruff` exclude that
+directory. Tests marked `gpu` are skipped automatically when no CUDA device is present.
+
+---
+
 ## Task Spooler (local server SLURM alternative)
 
-
 1. Installation
+
 ```bash
 apt update
 apt install task-spooler
 ```
 
-2. Usage:
-```bash
- tsp timeout 3600 python3 python_script.py \ 
-                        --param_1 "experiment_name" 
-#this will timeout in 60 minutes (3600 seconds)
-```
+2. Usage
 
 ```bash
-tsp #this shows current available jobs
-tsp -c #shows you the output of the last job
+tsp timeout 3600 python3 -m robust_kernelbench.run_inference_test_time_scaling \
+                        --experiment_name "exp_local_1" --trial 1
+tsp      # shows current available jobs
+tsp -c   # shows the output of the last job
 ```
-### References :
+
+### References
+
 - https://github.com/bstee615/shared-task-spooler
 - https://github.com/justanhduc/task-spooler
 
-
 ---
-## CONDA INSTALL LINUX:
-https://www.anaconda.com/docs/getting-started/miniconda/install#linux-2 
+
+## CONDA INSTALL LINUX
+
+https://www.anaconda.com/docs/getting-started/miniconda/install#linux-2
+
 ```bash
-# cd /workspace
 mkdir miniconda3
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ./miniconda3/miniconda.sh
 bash ./miniconda3/miniconda.sh -b -u -p ./miniconda3
 ```
 
-To activate it next time
+To activate it next time:
+
 ```bash
-source /workspace/miniconda3/etc/profile.d/conda.sh
-# OR
 source ~/miniconda3/etc/profile.d/conda.sh
-
-conda activate env_model #sglang
-
-conda activate env_kb2 #kb
-#it was created using `conda create -n env_robust_kernelbench python=3.11
+conda activate env_model   # serving
+conda activate env_kb2     # kernelbench
 ```
 
-### Slurm:
-1. Job
+### Slurm
+
 ```bash
 sbatch scripts/slurm_job_v2.sh
-```
 
-2. Interactive
-```bash
-# salloc --partition=interactive-gpu --gres=gpu:h200:1 --time=01:00:00 --ntasks=1
+# Interactive
 salloc --partition=interactive-gpu --gres=gpu:h200:3 --time=08:00:00 --ntasks=3
-# salloc --partition=interactive-gpu --time=08:00:00 --gres=gpu:h200:1
 srun --pty --overlap --jobid=100854 bash
-tmux attach -t 0
-tmux capture-pane -t 0:0.0 -S - && tmux save-buffer ./output.txt
 ```
 
-3. other commands
+Other useful commands:
+
 ```bash
 scontrol ping
 scontrol show partition interactive-gpu
 scontrol show assoc user=$USER
 ```
 
-## Tmux:
-https://tmux.info/docs/cheatsheet
+---
 
-1. Getting it running
+## Tmux
+
 ```bash
-tmux
+tmux                # start
+CTRL+b w            # switch windows
+CTRL+b c            # new window
+Ctrl+b "            # split vertical
+Ctrl+b d            # detach
 ```
 
-2. Switching between windows:
-```
-CTRL+b w #switch between windows
-CTRL+b c #create new window
-Ctrl+b " #split vertical
-Ctrl+b d #detach from tmux
-```
+---
 
-## LLM Serving
+## LLM serving
 
-1. Serving LLM
 ```bash
 python3 -m sglang.launch_server \
---model-path Qwen/Qwen3-Coder-Next \
---tensor-parallel-size 2 \
---tool-call-parser qwen3_coder \
---host 0.0.0.0 \
---port 30000
+    --model-path Qwen/Qwen3-Coder-Next \
+    --tensor-parallel-size 2 \
+    --tool-call-parser qwen3_coder \
+    --host 0.0.0.0 \
+    --port 30000
 ```
 
+Check it is running:
 
-2. Testing it is running:
 ```bash
 curl -v http://0.0.0.0:30000/health
 curl -v http://0.0.0.0:30000/model_info
 ```
 
+`run_main --serving_backend {sglang,vllm}` will call the matching memory-release
+endpoints (`/release_memory_occupation` + `/resume_memory_occupation` for SGLang,
+`/sleep?level=1` + `/wake_up` for vLLM) around each stage.
+
 ---
+
 ## (C) Nikolai Rozanov - 2025 - Present
-
-<!-- 
-read train.py and split it into two files. evaluate.py and model.py evaluate should handel
- all data loading, and the actual training loop and reporting of results. Model.py should have 
-all the model and optimiser code. 
--->
-
-<!-- 
-python -c "import mini_code_cli; print('OK')"
- -->
-
-<!-- 1. Running sglang
-```bash
-# create config
-cat > config.yaml << EOF
-model-path: Qwen/Qwen3-Coder-Next
-host: 0.0.0.0
-port: 30000
-tensor-parallel-size: 2
-enable-metrics: true
-log-requests: true
-EOF
-
-# run server
-python -m sglang.launch_server --config config.yaml
-``` -->
-
-<!-- Example command to run Qwen-Max-Plus on two GPUs.
-
-    python3 robust_kernelbench/run_inference_test_time_scaling_v2.py --experiment_name exp_local_L1_V8_3_Qwen3_Coder_Next__API0 --model_name Qwen/Qwen3-Coder-Next --max_model_len 16000 --max_tokens 10000 --prompt_type single_stage --num_items 1 --num_samples 1 --trial 1 --previous_trial 1 --level 1 --max_mem_util 0.90 --tensor_parallel_size 2
-
- -->
-
-<!-- 
-git config --global user.name "Nikolai Rozanov"
-git config --global user.email "nikolai.rozanov@gmail.com" 
--->
