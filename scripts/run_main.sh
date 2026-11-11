@@ -147,7 +147,8 @@ if [ "${SLEEP_MODE}" = "1" ]; then
     VLLM_SERVER_ARGS+=(--enable-sleep-mode)
 fi
 
-setsid python3 -m vllm.entrypoints.openai.api_server "${VLLM_SERVER_ARGS[@]}" &
+setsid python3 -m vllm.entrypoints.openai.api_server \
+    ${VLLM_SERVER_ARGS[@]+"${VLLM_SERVER_ARGS[@]}"} &
 SERVER_PID=$!
 
 cleanup() {
@@ -194,4 +195,6 @@ conda activate "${ENV_KB}"
 
 export CUDA_VISIBLE_DEVICES="${EVAL_GPU}"
 
-python3 -m robust_kernelbench.run_main "${PIPELINE_ARGS[@]}" "${JOBS[@]}"
+python3 -m robust_kernelbench.run_main \
+    ${PIPELINE_ARGS[@]+"${PIPELINE_ARGS[@]}"} \
+    ${JOBS[@]+"${JOBS[@]}"}
