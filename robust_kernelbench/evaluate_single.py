@@ -587,7 +587,7 @@ def eval_kernel_against_ref(
             print("[Eval] No compilation output. Therefore getting it from the exception.")
             try:
                 _, compilation_status, (std_compile, std_runtime), (comp_o, exe_o) = e.kernel_output_added
-            except:
+            except Exception:
                 # hopefully this means that load_custom_model returned a useful output
                 pass
 

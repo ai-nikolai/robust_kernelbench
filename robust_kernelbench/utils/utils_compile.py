@@ -189,7 +189,7 @@ def run_compilation(device, custom_model_src, context, build_dir_new,):
             try:
                 _, compilation_status, (std_compile, std_runtime), (comp_o, exe_o) = e.kernel_output_added
                 print(f"[COMPILE - utils_compile.run_compilation] Got the following values: comp_status: {compilation_status}, std_compile:{std_compile}, std_runtime:{std_runtime}, comp_o:{comp_o}, exe_o:{exe_o}")
-            except:
+            except Exception:
                 print("[COMPILE - utils_compile.run_compilation] ERROR with getting .kernel_output_added")
                 # Keep whatever the exception itself carries.  Previously this branch
                 # swallowed the error entirely, so failures raised before
