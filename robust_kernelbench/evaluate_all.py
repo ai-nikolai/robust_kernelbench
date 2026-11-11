@@ -196,9 +196,11 @@ def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout,
     Without this the problem simply vanished from evaluations.csv, so the
     evaluated count no longer matched the compiled count.
     """
-    from robust_kernelbench.evaluate_single import get_dataframe_results
     from robust_kernelbench.utils.utils import get_folder_path
     from robust_kernelbench.utils.utils_data import KernelExecResult
+
+    # `get_dataframe_results` is imported at module level (from evaluate_single);
+    # re-importing it here shadows that name (ruff F811).
 
     result = KernelExecResult(
         cuda_success=True,
