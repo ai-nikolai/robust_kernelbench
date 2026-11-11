@@ -155,20 +155,32 @@ def test_default_num_correct_trials_is_five():
 # Serving backend: both SGLang and vLLM endpoints used to be called every time.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
-    "backend,expected_path",
+    "backend,expected_path,enable_sleep",
     [
-        ("sglang", "/release_memory_occupation"),
-        ("vllm", "/sleep?level=1"),
+        ("sglang", "/release_memory_occupation", False),
+        # vLLM only exposes /sleep when the server was started with sleep mode.
+        ("vllm", "/sleep?level=1", True),
     ],
 )
-def test_pause_contacts_only_the_selected_backend(monkeypatch, backend, expected_path):
+def test_pause_contacts_only_the_selected_backend(monkeypatch, backend, expected_path, enable_sleep):
     calls = []
     monkeypatch.setattr(run_main, "_post_json", lambda url, timeout=60: calls.append(url) or {})
 
-    server_control(PipelineConfig(serving_backend=backend, use_online=1), "pause")
+    server_control(PipelineConfig(serving_backend=backend, use_online=1, enable_sleep=enable_sleep), "pause")
 
     assert len(calls) == 1
     assert calls[0].endswith(expected_path)
+
+
+def test_vllm_without_sleep_mode_contacts_nothing(monkeypatch):
+    """vLLM started without --enable-sleep-mode has no /sleep endpoint to call."""
+    calls = []
+    monkeypatch.setattr(run_main, "_post_json", lambda url, timeout=60: calls.append(url) or {})
+
+    server_control(PipelineConfig(serving_backend="vllm", use_online=1), "pause")
+    server_control(PipelineConfig(serving_backend="vllm", use_online=1), "resume")
+
+    assert calls == []
 
 
 def test_serving_backend_none_contacts_nothing(monkeypatch):
