@@ -34,14 +34,17 @@ import traceback
 
 from typing import Any
 
-
-from utils.utils import (
+from robust_kernelbench.logging_utils import get_logger, setup_logging
+from robust_kernelbench.utils.utils import (
+    construct_generation_dict,
+    find_ending_digit_and_string,
     get_folder_path,
     get_file_name,
-    get_problem_id_from_file_name
+    get_problem_id_from_file_name,
+    write_code,
 )
 
-from evaluate_single import (
+from robust_kernelbench.evaluate_single import (
     memory_cleanup, 
     eval_kernel_against_ref,
     get_dataframe_results,
@@ -49,6 +52,18 @@ from evaluate_single import (
     evaluate_single,
     eval_wrapper
 )
+
+logger = get_logger(__name__)
+
+# Re-exported for backwards compatibility: these used to be defined here and were
+# imported from this module by the compile drivers (creating an import cycle).
+__all__ = [
+    "find_ending_digit_and_string",
+    "construct_generation_dict",
+    "write_code",
+    "eval_main_loop",
+    "main",
+]
 
 if __name__ == '__main__':
     mp.set_start_method("spawn", force=True)  # Ensure spawn is used
@@ -62,57 +77,160 @@ level3_representative_subset_problem_ids = [1, 5, 8, 11, 20, 33, 38, 43]
 CURRENT_DATETIME=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
-def find_ending_digit_and_string(name):
-    """Extracts the name when it is: name_9812"""
-    out_digit = []
-    out_name = ""
-    for idx, c in enumerate(name[::-1]):
-        if c in "0123456789":
-            out_digit.insert(0,c)
-        else:
-            break
-    out_name = name[:-idx]
+def build_evaluate_single_command(
+    original_path,
+    new_path,
+    build_dir,
+    build_dir_new,
+    experiment_name,
+    problem_id,
+    sample_id,
+    level,
+    trial,
+    num_correct_trials=5,
+    num_perf_trials=3,
+    atol=None,
+    rtol=None,
+    flush_l2=True,
+    log_level=None,
+):
+    """Build the argv for one isolated ``python -m robust_kernelbench.evaluate_single``.
 
-    return out_name, "".join(out_digit)
-
-# %%
-def construct_generation_dict(folder):
+    Kept separate (and pure) so the correctness/timing settings that cross the process
+    boundary can be asserted in a unit test without touching a GPU.
     """
-    This functions assumes that inside 'folder' there will be files named according to the KernelBench problem names. 
+    command = [
+        sys.executable,
+        "-m",
+        "robust_kernelbench.evaluate_single",
+        # Paths
+        "--original_path", f"{original_path}",
+        "--new_path", f"{new_path}",
+        "--build_dir", f"{build_dir}",
+        "--build_dir_new", f"{build_dir_new}",
+        # Settings
+        "--experiment", f"{experiment_name}",
+        "--problem_id", f"{problem_id}",
+        "--sample_id", f"{sample_id}",
+        "--level", f"{level}",
+        "--trial", f"{trial}",
+        # Correctness / timing policy
+        "--num_correct_trials", f"{num_correct_trials}",
+        "--num_perf_trials", f"{num_perf_trials}",
+    ]
 
-    E.g. 1_Square_matrix_multiplication_{idx}.py
+    # Only forward explicit tolerances; otherwise evaluate_single applies its dtype policy.
+    if atol is not None:
+        command += ["--atol", f"{atol}"]
+    if rtol is not None:
+        command += ["--rtol", f"{rtol}"]
 
-    It will return:
-    {
-        '1_Square_matrix_multiplication_' : [<list of matching files>],
-    }
+    command += ["--flush_l2" if flush_l2 else "--no-flush_l2"]
 
-    Where hopefully is also inside KernelBench...
+    if log_level:
+        command += ["--log-level", str(log_level)]
+
+    return command
+
+
+def _eval_mem_limit_bytes(eval_mem_gb):
+    """Address-space cap for one eval child, in bytes (None = unlimited)."""
+    if not eval_mem_gb or eval_mem_gb <= 0:
+        return None
+    return int(eval_mem_gb * 1024 ** 3)
+
+
+def _make_preexec_fn(eval_mem_gb):
+    """Return a ``preexec_fn`` that caps the child's address space (RLIMIT_AS).
+
+    A single evaluated kernel can otherwise allocate tens of GB of host memory
+    (one conv3d case reached 16 GB), which on a small cluster cgroup triggers the
+    kernel OOM-killer.  Returns ``None`` when the cap is disabled or unsupported.
     """
-    files = os.listdir(folder)
+    limit = _eval_mem_limit_bytes(eval_mem_gb)
+    if limit is None:
+        return None
+    try:
+        import resource
+    except ImportError:  # pragma: no cover - non-POSIX platforms
+        logger.warning("--eval_mem_gb is not supported on this platform; ignoring")
+        return None
 
-    out_dict = {}
+    def _apply_limit():
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
-    for file in files:
-        if file.endswith(".py"):
-            file_basename = file.split(".py")[0]
-            file_basename_root, file_digit = find_ending_digit_and_string(file_basename)
-            # tmp = file_basename.split("_")
-            # if len(tmp) == 1:
-            #     file_basename = tmp[0]
-            # else:
-            #     file_basename = "_".join(tmp[:-1]) + "_"
-            
-            if out_dict.get(file_basename_root):
-                out_dict[file_basename_root].append(file)
-            else:
-                out_dict[file_basename_root] = [file]
-    
-    return out_dict
+    return _apply_limit
 
-def write_code(fullpath, code_src):
-    with open(fullpath,"w") as file:
-        file.write(code_src)
+
+def _kill_subprocess_group(proc, grace=10):
+    """SIGKILL ``proc``'s whole process group, then reap it.
+
+    Killing only the direct child leaves compiler/worker grandchildren alive, and
+    because they inherit the stdout/stderr pipes the parent then blocks forever in
+    ``communicate()`` -- which is exactly how one kernel hung past its timeout.
+    """
+    import signal
+
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        pgid = None
+
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            logger.warning("no permission to kill process group %s", pgid)
+
+    try:
+        proc.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        logger.error("eval subprocess %s did not die after SIGKILL", proc.pid)
+
+
+def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout, log_tail=""):
+    """Append a real evaluation row for a kernel that had to be killed.
+
+    Without this the problem simply vanished from evaluations.csv, so the
+    evaluated count no longer matched the compiled count.
+    """
+    from robust_kernelbench.evaluate_single import get_dataframe_results
+    from robust_kernelbench.utils.utils import get_folder_path
+    from robust_kernelbench.utils.utils_data import KernelExecResult
+
+    result = KernelExecResult(
+        cuda_success=True,
+        compiled=True,
+        runtime_success=True,
+        loading_success=True,
+        correctness_success=False,
+        timing_success=False,
+        correctness=False,
+        runtime=-1.0,
+        runtime_stats={},
+        runtime_original=-1.0,
+        runtime_original_stats={},
+        main_error=f"eval subprocess timed out after {timeout}s (process group killed)",
+        main_traceback=(log_tail or "")[-4000:],
+    )
+
+    row = result.__dict__.copy()
+    row["problem_id"] = problem_id
+    row["sample_id"] = sample_id
+
+    folder_path = get_folder_path(experiment_name, trial=trial)
+    eval_filename = os.path.join(folder_path, "evaluations.csv")
+    results_df = get_dataframe_results([row])
+    if os.path.exists(eval_filename):
+        results_df.to_csv(eval_filename, index=False, header=False, mode="a")
+    else:
+        results_df.to_csv(eval_filename, index=False)
+    logger.error(
+        "recorded timeout row for pid=%s sid=%s in %s", problem_id, sample_id, eval_filename
+    )
+
 
 def eval_main_loop(
     dataset, 
@@ -123,10 +241,25 @@ def eval_main_loop(
     compiled_problem_ids=None, 
     level=None, 
     already_evaluated=None,
-    pid_sid_set={},
+    pid_sid_set=frozenset(),
+    num_correct_trials=5,
+    num_perf_trials=3,
+    atol=None,
+    rtol=None,
+    flush_l2=True,
+    timeout=600,
+    eval_mem_gb=24,
+    log_level=None,
     ):
     """Main Eval Loop"""
     print("[Main Evaluate] Entered `eval_main_loop()`")
+    logger.info(
+        "eval limits: per-kernel timeout=%ss, per-child address space=%s, MAX_JOBS=%s, OMP_NUM_THREADS=%s",
+        timeout,
+        f"{eval_mem_gb:.0f} GB" if _eval_mem_limit_bytes(eval_mem_gb) else "unlimited",
+        os.environ.get("MAX_JOBS", "<unset>"),
+        os.environ.get("OMP_NUM_THREADS", "<unset>"),
+    )
     captured_text = "No Capture."
     device = torch.cuda.current_device() if torch.cuda.is_available() else None
 
@@ -186,28 +319,26 @@ def eval_main_loop(
 
                 code_path = os.path.join(folder_path_code, solution)
 
-                current_file_path = os.path.dirname(os.path.abspath(__file__))
-                eval_file_path = os.path.join(current_file_path,'evaluate_single.py')
-
                 ##################################
                 # WITH SUBPROCESS
 
-                python_command_to_run = [
-                        'python', 
-                        eval_file_path,
-                        # Path
-                        "--original_path", f"{reference_code_path}",
-                        "--new_path", f"{code_path}",
-                        "--build_dir", f"{build_dir}",
-                        "--build_dir_new", f"{build_dir_new}",
-                        # Settings
-                        "--experiment", f"{experiment_name}",
-                        "--problem_id", f"{problem_id}",
-                        "--sample_id", f"{sample_id}",
-                        "--level", f"{level}",
-                        "--trial", f"{trial}",
-                        # other
-                    ]
+                python_command_to_run = build_evaluate_single_command(
+                    original_path=reference_code_path,
+                    new_path=code_path,
+                    build_dir=build_dir,
+                    build_dir_new=build_dir_new,
+                    experiment_name=experiment_name,
+                    problem_id=problem_id,
+                    sample_id=sample_id,
+                    level=level,
+                    trial=trial,
+                    num_correct_trials=num_correct_trials,
+                    num_perf_trials=num_perf_trials,
+                    atol=atol,
+                    rtol=rtol,
+                    flush_l2=flush_l2,
+                    log_level=log_level,
+                )
                 # kwargs = {
                 #     "original_path":reference_code_path, 
                 #     "new_path":code_path, 
@@ -223,24 +354,60 @@ def eval_main_loop(
                 #     "sample_id":sample_id,
                 # }
 
-                python_command_string = " ".join(python_command_to_run)
+                python_command_string = " ".join(str(x) for x in python_command_to_run)
 
-                print(f"[Main] Attempting to run subprocess:\n---\n{python_command_string}\n---\n")
-                print(f"[Main] This is the cache location: {torch.utils.cpp_extension._get_build_directory(eval_file_path, verbose=True)}")
+                logger.debug("running eval subprocess: %s", python_command_string)
 
                 start = datetime.now()
-                captured_text = subprocess.run(
-                    python_command_to_run,
-                    # check=True,
-                    capture_output=True,     # capture stdout and stderr
-                    text=True,               # decode bytes to str
-                    timeout=600 #timeout after 10 minutes.
-                )
+                # Redirect to *files*, not pipes: a grandchild that inherits a pipe
+                # keeps it open, so a pipe-based timeout can block forever in
+                # communicate() even after the direct child died.  start_new_session
+                # gives the child its own process group so killpg reaches every
+                # descendant, and preexec_fn caps the child's address space.
+                stdout_path = os.path.join(build_dir_new, "eval_stdout.log")
+                stderr_path = os.path.join(build_dir_new, "eval_stderr.log")
+                timed_out = False
+                proc = None
+                with open(stdout_path, "w") as out_fh, open(stderr_path, "w") as err_fh:
+                    try:
+                        proc = subprocess.Popen(
+                            python_command_to_run,
+                            stdout=out_fh,
+                            stderr=err_fh,
+                            start_new_session=True,
+                            preexec_fn=_make_preexec_fn(eval_mem_gb),
+                        )
+                        proc.wait(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+                        logger.error(
+                            "eval subprocess timed out after %ss for pid=%s sid=%s; killing process group",
+                            timeout, problem_id, sample_id,
+                        )
+                        if proc is not None:
+                            _kill_subprocess_group(proc)
+
+                captured_text = ""
+                for _path in (stdout_path, stderr_path):
+                    try:
+                        with open(_path, "r", errors="replace") as _fh:
+                            captured_text += _fh.read()
+                    except OSError:
+                        pass
+
+                if timed_out:
+                    write_timeout_result(
+                        experiment_name, trial, problem_id, sample_id, timeout, log_tail=captured_text
+                    )
+                    continue
+
                 end = datetime.now()
                 duration = end - start
-                print(f"[Main] Subprocess finished. It took {duration}")
+                logger.info("eval subprocess finished in %s (pid=%s sid=%s)", duration, problem_id, sample_id)
                 if verbose:
-                    print(f"[Main] captured_text:\n----Start----\n\n{captured_text}\n\n----End----") 
+                    logger.debug(
+                        "captured_text:\n----Start----\n\n%s\n\n----End----", captured_text
+                    )
 
                 ##################################
                 # WITH Multi Processing
@@ -354,26 +521,59 @@ def get_evaluation_pid_sid(experiment_name, trial):
     
     return pid_sid_list
 
-def get_args():
+def get_args(argv=None):
     import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--num_samples", type=int, default=1, help="Num of Parallel responses")
-    parser.add_argument("--prompt_type", type=str, default="normal", help="Which prompt to use...")
+    parser = argparse.ArgumentParser(description="Evaluate every compiled kernel for one trial.")
     parser.add_argument("--trial", type=int, default=1, help="Which trial you are currently running...")
     parser.add_argument("--experiment_name", type=str, default="exp_test_run", help="experiment names")
-    parser.add_argument("--temperature", type=float, default=0.6, help="temp for LLM")
-    parser.add_argument("--max_tokens", type=str, default=2000, help="max tokens")
-    parser.add_argument("--num_items", type=int, help="How many data points to run...")
+    parser.add_argument("--experiment", type=str, default=None, help="Alias for --experiment_name.")
     parser.add_argument("--level", type=int, default=1, help="Which level to run...")
 
-    # TODO: add lora support
+    # Correctness / timing policy (forwarded to every evaluate_single subprocess)
+    parser.add_argument(
+        "--num_correct_trials",
+        type=int,
+        default=5,
+        help="Correctness trials per kernel; all must match the reference.",
+    )
+    parser.add_argument("--num_perf_trials", type=int, default=3, help="Performance trials per kernel.")
+    parser.add_argument(
+        "--atol",
+        type=float,
+        default=None,
+        help="Absolute tolerance. Default: chosen from the output dtype.",
+    )
+    parser.add_argument(
+        "--rtol",
+        type=float,
+        default=None,
+        help="Relative tolerance. Default: chosen from the output dtype.",
+    )
+    parser.add_argument(
+        "--flush_l2",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Evict L2 before each timed trial (default: on).",
+    )
+    parser.add_argument("--timeout", type=int, default=600, help="Per-kernel eval timeout (s).")
+    parser.add_argument(
+        "--eval_mem_gb",
+        type=float,
+        default=24.0,
+        help="Address-space cap for one eval child in GB (0 disables the cap).",
+    )
+    parser.add_argument("--log-level", type=str, default="INFO", help="Logging level (DEBUG/INFO/WARNING/...).")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if not args.experiment_name or args.experiment_name == "exp_test_run":
+        if args.experiment:
+            args.experiment_name = args.experiment
     return args
 
-if __name__=="__main__":
-    args = get_args()
+def main(argv=None) -> int:
+    args = get_args(argv)
+    setup_logging(args.log_level, force=True)
 
     ds = load_dataset("ai-nikolai/KernelBench")
     level=args.level
@@ -386,14 +586,28 @@ if __name__=="__main__":
     if successful_problem_sample_pairs and len(successful_problem_sample_pairs) > 0:
         successful_problem_ids = set([pid for pid, _ in successful_problem_sample_pairs])
         actual_ds = actual_ds.filter(lambda x: x["problem_id"] in successful_problem_ids)
-        print(f"[Main] Filtered dataset to {len(actual_ds)} problems with successful compilations")
+        logger.info("filtered dataset to %s problems with successful compilations", len(actual_ds))
 
         pid_sid_set = get_evaluation_pid_sid(experiment_name,args.trial)
-        print(f"[Main] Found already existing evaluations: {len(pid_sid_set)}")
-        results = eval_main_loop(actual_ds, experiment_name=experiment_name, trial=args.trial, level=args.level,pid_sid_set=pid_sid_set)
-        print("[Main] Done with evaluate all.")
+        logger.info("found %s existing evaluations", len(pid_sid_set))
+        eval_main_loop(
+            actual_ds,
+            experiment_name=experiment_name,
+            trial=args.trial,
+            level=args.level,
+            pid_sid_set=pid_sid_set,
+            num_correct_trials=args.num_correct_trials,
+            num_perf_trials=args.num_perf_trials,
+            atol=args.atol,
+            rtol=args.rtol,
+            flush_l2=args.flush_l2,
+            timeout=args.timeout,
+            eval_mem_gb=args.eval_mem_gb,
+            log_level=args.log_level,
+        )
+        logger.info("done with evaluate all")
     else:
-        print("[Main] Warning: No successful compilations found.")
+        logger.warning("no successful compilations found for %s trial_%s", experiment_name, args.trial)
 
 
     try:
@@ -426,20 +640,15 @@ if __name__=="__main__":
                     'main_traceback'
                 ])
                 empty_evaluations_df.to_csv(evaluations_csv, index=False)
-                print(f"[Main] Created empty evaluations.csv at {evaluations_csv}")
+                logger.warning("created empty evaluations.csv at %s", evaluations_csv)
             else:
-                print(f"[Main] compilations.csv and evaluations.csv files exist. All seems ok.")
+                logger.info("compilations.csv and evaluations.csv files exist. All seems ok.")
     except Exception as e:
-        print(f"[Main] Filling in the blanks, did not work for evaluations.csv. {e}")  
-    
-    print("[Main] Exiting...")
+        logger.error("filling in blanks for evaluations.csv did not work: %s", e)
 
-    # results_df = get_dataframe_results(results)
-    # results_df.head()
+    logger.info("exiting")
+    return 0
 
-    # Path("out").mkdir(parents=True, exist_ok=True)
-    # results_df.to_csv(f'out/evaluations_{experiment_name}_{CURRENT_DATETIME}.csv', index=False)
 
-    # folder_path = get_folder_path(experiment_name, trial=args.trial)
-    # results_df.to_csv(os.path.join(folder_path,'evaluations.csv'), index=False)
-    
+if __name__ == "__main__":
+    sys.exit(main())
