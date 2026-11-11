@@ -125,7 +125,7 @@ def main():
                                                    categories=method_order, ordered=True)
 
         sns.barplot(data=model_data, x="Metric", y="Mean Value", hue=f"{special_key}",
-                    palette=palette, ax=ax, ci=None, edgecolor='black', linewidth=0.5,
+                    palette=palette, ax=ax, errorbar=None, edgecolor='black', linewidth=0.5,
                     hue_order=method_order)
 
         # Rotate x-axis labels for readability
