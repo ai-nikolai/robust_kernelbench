@@ -82,6 +82,18 @@ JOBS=(
  "${JOB_5:-5 205 kb_multi_stage}"
 )
 
+# JOBS_OVERRIDE replaces the list above, e.g. to run just the first round:
+#   JOBS_OVERRIDE="1 1 kernelbench"
+# Use ';' to separate several rounds.  (Same contract as scripts/slurm_job_v2.sh.)
+if [ -n "${JOBS_OVERRIDE:-}" ]; then
+    JOBS=()
+    while IFS= read -r _job; do
+        if [ -n "${_job}" ]; then
+            JOBS+=("${_job}")
+        fi
+    done <<< "$(printf '%s' "${JOBS_OVERRIDE}" | tr ';' '\n')"
+fi
+
 # ----------------------------------------------------------------------
 # Build the argument lists
 #
