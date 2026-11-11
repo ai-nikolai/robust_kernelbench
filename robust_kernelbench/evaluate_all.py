@@ -190,11 +190,37 @@ def _kill_subprocess_group(proc, grace=10):
         logger.error("eval subprocess %s did not die after SIGKILL", proc.pid)
 
 
+def _ensure_trailing_newline(path):
+    """Make sure ``path`` ends with a newline before a row is appended.
+
+    A child killed mid-append can leave a truncated last line; appending another
+    row straight after it would merge the two and corrupt the CSV.  Best effort:
+    a failure here is logged and does not stop the run.
+    """
+    try:
+        with open(path, "rb+") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                return
+            handle.seek(-1, os.SEEK_END)
+            if handle.read(1) != b"\n":
+                handle.write(b"\n")
+    except OSError as e:
+        logger.warning("could not normalise the trailing newline of %s: %s", path, e)
+
+
 def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout, log_tail=""):
     """Append a real evaluation row for a kernel that had to be killed.
 
     Without this the problem simply vanished from evaluations.csv, so the
     evaluated count no longer matched the compiled count.
+
+    The flags record only what was actually observed.  The compile stage did
+    succeed (the kernel is listed in compilations.csv), but the process was
+    killed before it could load the module, execute the kernel, or produce a
+    timing -- so every runtime/loading/correctness/cuda flag is False and
+    ``runtime`` is -1.0.  Claiming ``cuda_success=True`` here would have
+    inflated the CUDA and compile aggregates in the analysis.
     """
     from robust_kernelbench.utils.utils import get_folder_path
     from robust_kernelbench.utils.utils_data import KernelExecResult
@@ -203,10 +229,10 @@ def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout,
     # re-importing it here shadows that name (ruff F811).
 
     result = KernelExecResult(
-        cuda_success=True,
+        cuda_success=False,
         compiled=True,
-        runtime_success=True,
-        loading_success=True,
+        runtime_success=False,
+        loading_success=False,
         correctness_success=False,
         timing_success=False,
         correctness=False,
@@ -226,6 +252,7 @@ def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout,
     eval_filename = os.path.join(folder_path, "evaluations.csv")
     results_df = get_dataframe_results([row])
     if os.path.exists(eval_filename):
+        _ensure_trailing_newline(eval_filename)
         results_df.to_csv(eval_filename, index=False, header=False, mode="a")
     else:
         results_df.to_csv(eval_filename, index=False)
@@ -398,10 +425,27 @@ def eval_main_loop(
                         pass
 
                 if timed_out:
-                    write_timeout_result(
-                        experiment_name, trial, problem_id, sample_id, timeout, log_tail=captured_text
-                    )
+                    # Keep the per-problem logs for post-mortem when a kernel hung.
+                    try:
+                        write_timeout_result(
+                            experiment_name, trial, problem_id, sample_id, timeout, log_tail=captured_text
+                        )
+                    except Exception:  # noqa: BLE001 - losing one row must not abort the batch
+                        logger.exception(
+                            "could not record the timeout row for pid=%s sid=%s; "
+                            "evaluations.csv will be missing this problem",
+                            problem_id,
+                            sample_id,
+                        )
                     continue
+
+                # Keep the logs only for timeouts (post-mortem): otherwise two files
+                # per problem accumulate inside every kernel build directory.
+                for _path in (stdout_path, stderr_path):
+                    try:
+                        os.remove(_path)
+                    except OSError:
+                        pass
 
                 end = datetime.now()
                 duration = end - start
