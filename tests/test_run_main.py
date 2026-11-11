@@ -151,6 +151,17 @@ def test_default_num_correct_trials_is_five():
     assert PipelineConfig().num_correct_trials >= 5
 
 
+def test_evaluate_command_forwards_eval_memory_cap():
+    """--eval_mem_gb must reach the evaluate stage (it bounds per-kernel host memory)."""
+    command = build_evaluate_command(PipelineConfig(eval_mem_gb=12.5), JobSpec(1, 1, "kb"), "e")
+    assert command[command.index("--eval_mem_gb") + 1] == "12.5"
+
+
+def test_evaluate_command_forwards_eval_timeout():
+    command = build_evaluate_command(PipelineConfig(eval_timeout=42), JobSpec(1, 1, "kb"), "e")
+    assert command[command.index("--timeout") + 1] == "42"
+
+
 # ---------------------------------------------------------------------------
 # Serving backend: both SGLang and vLLM endpoints used to be called every time.
 # ---------------------------------------------------------------------------
