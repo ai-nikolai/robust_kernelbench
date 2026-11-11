@@ -50,7 +50,7 @@ dev = [
 robust-kernelbench = "robust_kernelbench.run_main:cli"
 
 [tool.setuptools.packages.find]
-include = ["robust_kernelbench*"]
+include = ["robust_kernelbench*", "analysis*"]
 
 [tool.setuptools.package-data]
 robust_kernelbench = ["kb_prompts/*.py", "kb_prompts/*.toml", "kb_prompts/**/*.py"]

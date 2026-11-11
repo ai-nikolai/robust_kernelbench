@@ -34,7 +34,9 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu torch
 
       - name: Install the project
-        run: pip install -e ".[dev]"
+        # `analysis` brings matplotlib/scipy/seaborn so the post-hoc pipeline is
+        # importable in CI (it is an optional extra, not a core dependency).
+        run: pip install -e ".[dev,analysis]"
 
       - name: Byte-compile everything
         # `kb_prompts/` holds *prompt templates* (placeholder pseudo-code in .py files),
@@ -57,6 +59,15 @@ jobs:
           python -m robust_kernelbench.evaluate_single --help > /dev/null
           python -m robust_kernelbench.compile_all --help > /dev/null
           python -m robust_kernelbench.run_inference_test_time_scaling --help > /dev/null
+          python -m analysis.run_analysis_summary_clean --help > /dev/null
+          python -m analysis.run_analysis_statistical --help > /dev/null
+          python -m analysis.run_analysis_plotting --help > /dev/null
+
+      - name: Analysis modules import cleanly
+        # Importing must not read a CSV or parse argv: run_analysis_plotting used to
+        # do both at module level, which made the module unimportable.
+        run: |
+          python -c "import analysis, analysis.utils, analysis.run_analysis_summary_clean, analysis.run_analysis_statistical, analysis.run_analysis_plotting"
 
       - name: Run the test suite
         # GPU-marked tests skip automatically on a CPU runner (see conftest.py).
