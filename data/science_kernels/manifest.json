@@ -1,6 +1,6 @@
 {
   "schema": "kernelbench-v1",
-  "name": "science-kernels",
+  "name": "ScienceKernelBench",
   "version": "0.2.0",
   "description": "Science-focused KernelBench tasks spanning physics, chemistry, biology, statistics, mathematics and economics.",
   "levels": {

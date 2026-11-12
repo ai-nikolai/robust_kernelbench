@@ -235,12 +235,19 @@ robust-kernelbench-eval \
   --dataset_split level_1 \
   --experiment science_exp --trial 1
 
-# agentic loop
+# agentic loop (local source)
 robust-kernelbench \
   --dataset_path data/science_kernels \
   --dataset_format directory \
   --dataset_split level_1 \
   --dataset_name science-kernels \
+  --version science_v0 --model_name Qwen/Qwen3-Coder-30B-A3B-Instruct \
+  "1 1 kernelbench"
+
+# same usage as KernelBench, once the science dataset is on the Hub
+robust-kernelbench \
+  --dataset ai-nikolai/ScienceKernelBench \
+  --dataset_split level_1 \
   --version science_v0 --model_name Qwen/Qwen3-Coder-30B-A3B-Instruct \
   "1 1 kernelbench"
 ```
@@ -265,6 +272,14 @@ kernel, 2D Laplacian) plus a Hugging Face export script:
 
 ```bash
 python data/science_kernels/to_hf.py --output /tmp/science_kernels_hf
+```
+
+The export mirrors KernelBench's HF layout: one `default` config with
+`level_1`, `level_2` and `level_3` splits under `data/`.  Upload it to
+`ai-nikolai/ScienceKernelBench` with:
+
+```bash
+huggingface-cli upload ai-nikolai/ScienceKernelBench /tmp/science_kernels_hf --repo-type dataset
 ```
 
 See `data/science_kernels/README.md` for the schema, provenance and upload steps.

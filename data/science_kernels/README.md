@@ -14,18 +14,14 @@ tags:
 - pde
 - kernel-methods
 configs:
-- config_name: level_1
+- config_name: default
   data_files:
   - split: level_1
-    path: level_1.parquet
-- config_name: level_2
-  data_files:
+    path: data/level_1-*
   - split: level_2
-    path: level_2.parquet
-- config_name: level_3
-  data_files:
+    path: data/level_2-*
   - split: level_3
-    path: level_3.parquet
+    path: data/level_3-*
 ---
 
 # Science KernelBench
@@ -175,7 +171,7 @@ robust-kernelbench \
 
 ```bash
 python data/science_kernels/to_hf.py --output /tmp/science_kernels_hf
-huggingface-cli upload <your-org>/science-kernels /tmp/science_kernels_hf \
+huggingface-cli upload ai-nikolai/ScienceKernelBench /tmp/science_kernels_hf \
   --repo-type dataset
 ```
 
@@ -184,7 +180,7 @@ Or push directly:
 ```bash
 python data/science_kernels/to_hf.py \
   --output /tmp/science_kernels_hf \
-  --repo-id <your-org>/science-kernels
+  --push
 ```
 
 ## Provenance and licensing
