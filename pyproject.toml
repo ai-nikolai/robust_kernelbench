@@ -62,6 +62,7 @@ robust-kernelbench-eval = "robust_kernelbench.evaluate_all:cli"
 robust-kernelbench-eval-single = "robust_kernelbench.evaluate_single:cli"
 robust-kernelbench-compile = "robust_kernelbench.compile_all:cli"
 robust-kernelbench-compile-sequential = "robust_kernelbench.compile_all_sequential:cli"
+robust-kernelbench-dataset = "robust_kernelbench.tasks:cli"
 
 [tool.setuptools.packages.find]
 include = ["robust_kernelbench*", "analysis*"]

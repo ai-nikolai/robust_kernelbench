@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from robust_kernelbench import artifacts
+from robust_kernelbench import artifacts, tasks
 from robust_kernelbench.logging_utils import get_logger, setup_logging
 from robust_kernelbench.agent.prompt_common import choose_prompt
 from robust_kernelbench.utils.utils import get_file_name, get_folder_path
@@ -562,6 +562,7 @@ def build_arg_parser(description: str, backend_default: str) -> argparse.Argumen
     parser.add_argument("--num_items", type=int, help="How many data points to run...")
     parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-Coder-7B-Instruct", help="Model Name")
     parser.add_argument("--level", type=int, default=1, help="Which level to run...")
+    tasks.add_dataset_args(parser)
     parser.add_argument("--max_model_len", type=int, default=32000, help="Max input and output tokens...")
     parser.add_argument("--max_tokens", type=int, default=8000, help="max tokens to generate")
     parser.add_argument("--tokenizer_name", type=str, help="tokenizer name if different from model name.")
@@ -609,21 +610,18 @@ def build_arg_parser(description: str, backend_default: str) -> argparse.Argumen
     return parser
 
 
-def load_dataset_for_level(level: int, use_filter: bool = False):
-    """Load one KernelBench level from the HuggingFace dataset."""
-    from datasets import load_dataset
+def load_dataset_for_level(level: int, use_filter: bool = False, source: tasks.TaskSource | None = None):
+    """Load one task set, defaulting to the official KernelBench level split."""
+    source = (source or tasks.TaskSource()).for_level(level)
+    representative_ids = None
+    if use_filter and source.name == tasks.DEFAULT_DATASET and source.format == "hf":
+        representative_ids = tasks.REPRESENTATIVE_IDS.get(level)
 
-    data_repo = "ai-nikolai/KernelBench"
-    dataset = load_dataset(data_repo)
-    dataset = dataset[f"level_{level}"]
-
-    if use_filter:
-        # KernelBench's "representative subset" for level 1.
-        from robust_kernelbench.evaluate_single import level1_representative_subset_problem_ids
-
-        logger.info("filtering to the representative subset")
-        dataset = dataset.filter(lambda x: x["problem_id"] in level1_representative_subset_problem_ids)
-
+    dataset = tasks.load_tasks(
+        source,
+        representative=use_filter,
+        representative_ids=representative_ids,
+    )
     logger.info("dataset:\n%s", dataset)
     return dataset
 
@@ -667,7 +665,9 @@ def run_main(argv=None, backend_kind="vllm", description="Kernel generation"):
     # `--backend` wins over the wrapper default so one wrapper can drive either engine.
     backend_kind = getattr(args, "backend", backend_kind) or backend_kind
 
-    dataset = load_dataset_for_level(args.level, use_filter=args.filter)
+    source = tasks.source_from_args(args, level=args.level)
+    dataset = load_dataset_for_level(args.level, use_filter=args.filter, source=source)
+    dataset_metadata = tasks.dataset_metadata(source, dataset)
     dataset = attach_previous_trial(
         dataset, args.experiment_name, args.trial, previous_trial=args.previous_trial, run_clean_trial=args.run_clean_trial
     )
@@ -751,6 +751,7 @@ def run_main(argv=None, backend_kind="vllm", description="Kernel generation"):
     artifacts.append_rows(results_df, generations_csv_path)
 
     metadata = {
+        **dataset_metadata,
         "model_name": args.model_name,
         "seed": args.seed,
         "git_commit": _git_commit(),

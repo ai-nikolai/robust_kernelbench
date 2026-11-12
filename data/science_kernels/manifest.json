@@ -1,0 +1,40 @@
+{
+  "schema": "kernelbench-v1",
+  "name": "science-kernels",
+  "version": "0.1.0",
+  "description": "Science-focused KernelBench tasks: kernel methods, PDE stencils and related numerical primitives.",
+  "tasks": [
+    {
+      "problem_id": 1,
+      "name": "pairwise_rbf",
+      "code_path": "kernels/0001_pairwise_rbf.py",
+      "level": 1,
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": ["kernel-methods", "gaussian-process", "distance"],
+      "source": {
+        "origin": "original",
+        "license": "AGPL-3.0",
+        "notes": "Reference implementation written for this dataset."
+      }
+    },
+    {
+      "problem_id": 2,
+      "name": "laplacian_2d",
+      "code_path": "kernels/0002_laplacian_2d.py",
+      "level": 1,
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": ["pde", "stencil", "laplacian"],
+      "source": {
+        "origin": "original",
+        "license": "AGPL-3.0",
+        "notes": "Reference implementation written for this dataset."
+      }
+    }
+  ]
+}

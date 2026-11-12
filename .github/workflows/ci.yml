@@ -61,12 +61,19 @@ jobs:
           robust-kernelbench-eval-single --help > /dev/null
           robust-kernelbench-compile --help > /dev/null
           robust-kernelbench-compile-sequential --help > /dev/null
+          robust-kernelbench-dataset --help > /dev/null
           python -m robust_kernelbench.evaluate_single --help > /dev/null
           python -m robust_kernelbench.compile_all --help > /dev/null
           python -m robust_kernelbench.run_inference_test_time_scaling --help > /dev/null
           python -m analysis.run_analysis_summary_clean --help > /dev/null
           python -m analysis.run_analysis_statistical --help > /dev/null
           python -m analysis.run_analysis_plotting --help > /dev/null
+
+      - name: Validate the bundled science dataset
+        run: |
+          robust-kernelbench-dataset validate \
+            --dataset_path data/science_kernels \
+            --dataset_format directory
 
       - name: Analysis modules import cleanly
         # Importing must not read a CSV or parse argv: run_analysis_plotting used to

@@ -241,9 +241,8 @@ def main(csv_path, output_path):
     latex.append("\\begin{table*}[htbp]")
     latex.append("\\centering")
     caption = (
-        "Main results table summarizing the scores. All experiments were conducted on the "
-        "KernelBench GPU programming task with a fixed test set of size $N = 100$ problems from "
-        "level~1. IR = Iterative Refinement; IB = Inductive Bias. "
+        "Main results table summarizing the scores for the configured GPU-kernel task set. "
+        "IR = Iterative Refinement; IB = Inductive Bias. "
         "Reported values are mean $\\pm$ standard deviation over the available runs "
         "(the statistical CSV records $n$ per method). "
         "Green bold values indicate statistically significant improvement of +IB over IR "

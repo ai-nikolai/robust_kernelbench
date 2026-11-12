@@ -40,9 +40,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Sequence
 
-from robust_kernelbench import artifacts
+from robust_kernelbench import artifacts, tasks
 from robust_kernelbench.cli_utils import non_negative_float, positive_int
 from robust_kernelbench.logging_utils import get_logger, setup_logging
 
@@ -84,6 +85,15 @@ class PipelineConfig:
     version: str = "V8"
     parent_prompt_type: str = "kernelbench"
     level: int = 1
+
+    # Dataset identity.  Defaults to the official KernelBench source so the
+    # generated experiment names for existing runs stay unchanged.
+    dataset: str = tasks.DEFAULT_DATASET
+    dataset_path: str | None = None
+    dataset_format: str | None = None
+    dataset_split: str | None = None
+    dataset_revision: str | None = None
+    dataset_name: str | None = None
 
     # Stage selection
     inference: int = 1
@@ -138,8 +148,35 @@ class PipelineConfig:
         """Filesystem-safe, truncated model slug used in the experiment name."""
         return re.sub(r"[^a-zA-Z0-9]", "_", self.model_name.split("/")[-1])[:32]
 
+    def resolved_dataset_format(self) -> str:
+        return self.dataset_format or ("directory" if self.dataset_path else "hf")
+
+    def dataset_source(self) -> tasks.TaskSource:
+        source = tasks.TaskSource(
+            name=self.dataset,
+            label=self.dataset_name or (Path(self.dataset_path).name if self.dataset_path else None),
+            format=self.resolved_dataset_format(),
+            path=self.dataset_path,
+            split=self.dataset_split,
+            revision=self.dataset_revision,
+        )
+        return source.for_level(self.level)
+
+    def is_default_dataset(self) -> bool:
+        return (
+            not self.dataset_path
+            and self.resolved_dataset_format() == "hf"
+            and self.dataset == tasks.DEFAULT_DATASET
+            and self.dataset_split is None
+            and self.dataset_revision is None
+            and self.dataset_name is None
+        )
+
     def signature(self) -> str:
-        return f"L{self.level}_{self.version}_{self.short_model_name()}_{self.parent_prompt_type}_API{self.use_online}"
+        base = f"L{self.level}_{self.version}_{self.short_model_name()}_{self.parent_prompt_type}_API{self.use_online}"
+        if not self.is_default_dataset():
+            base += f"_{self.dataset_source().slug}"
+        return base
 
     def resolved_experiment_name(self) -> str:
         return self.experiment_name or f"exp_local_{self.signature()}"
@@ -166,6 +203,26 @@ class PipelineConfig:
 # ============================================================================
 #  Command building (pure, so it can be unit tested without a GPU)
 # ============================================================================
+def _dataset_command_args(config: PipelineConfig) -> list[str]:
+    """Forward the dataset selection to a stage subprocess."""
+    source = config.dataset_source()
+    args = [
+        "--dataset",
+        config.dataset,
+        "--dataset_format",
+        config.resolved_dataset_format(),
+        "--dataset_name",
+        source.display_name,
+    ]
+    if source.split:
+        args += ["--dataset_split", source.split]
+    if config.dataset_path:
+        args += ["--dataset_path", config.dataset_path]
+    if config.dataset_revision:
+        args += ["--dataset_revision", config.dataset_revision]
+    return args
+
+
 def build_inference_command(config: PipelineConfig, job: JobSpec, experiment_name: str) -> list[str]:
     script = config.resolve_inference_script()
     command = [
@@ -184,6 +241,7 @@ def build_inference_command(config: PipelineConfig, job: JobSpec, experiment_nam
         str(job.previous_trial),
         "--level",
         str(config.level),
+        *_dataset_command_args(config),
         "--max_model_len",
         str(config.max_model_len),
         "--max_tokens",
@@ -249,6 +307,7 @@ def build_evaluate_command(config: PipelineConfig, job: JobSpec, experiment_name
         str(job.new_trial),
         "--level",
         str(config.level),
+        *_dataset_command_args(config),
         "--num_correct_trials",
         str(config.num_correct_trials),
         "--num_perf_trials",
@@ -544,6 +603,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Configuration
     parser.add_argument("--level", type=int, default=1, help="KernelBench level")
+    tasks.add_dataset_args(parser)
     parser.add_argument("--version", type=str, default="V8", help="Version string")
     parser.add_argument("--use_online", type=int, default=1, choices=[0, 1], help="Use online service (1) or offline (0)")
     parser.add_argument("--num_items", type=int, default=None, help="Limit number of items (None for all)")
@@ -646,6 +706,12 @@ def config_from_args(args: argparse.Namespace) -> PipelineConfig:
         version=args.version,
         parent_prompt_type=args.parent_prompt_type,
         level=args.level,
+        dataset=args.dataset,
+        dataset_path=args.dataset_path,
+        dataset_format=args.dataset_format,
+        dataset_split=args.dataset_split,
+        dataset_revision=args.dataset_revision,
+        dataset_name=args.dataset_name,
         inference=args.inference,
         compile=args.compile,
         eval=args.eval,

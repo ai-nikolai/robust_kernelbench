@@ -6,10 +6,9 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from datasets import load_dataset
 from tqdm import tqdm
 
-from robust_kernelbench import artifacts
+from robust_kernelbench import artifacts, tasks
 from robust_kernelbench.cli_utils import non_negative_float, positive_int
 from robust_kernelbench.evaluate_single import get_dataframe_results
 from robust_kernelbench.logging_utils import get_logger, setup_logging
@@ -476,6 +475,7 @@ def get_args(argv=None):
     parser.add_argument("--experiment_name", type=str, default="exp_test_run", help="experiment names")
     parser.add_argument("--experiment", type=str, default=None, help="Alias for --experiment_name.")
     parser.add_argument("--level", type=int, default=1, help="Which level to run...")
+    tasks.add_dataset_args(parser)
 
     # Correctness / timing policy (forwarded to every evaluate_single subprocess)
     parser.add_argument(
@@ -543,9 +543,9 @@ def main(argv=None) -> int:
     args = get_args(argv)
     setup_logging(args.log_level, force=True)
 
-    ds = load_dataset("ai-nikolai/KernelBench")
-    level=args.level
-    actual_ds = ds[f"level_{level}"]
+    source = tasks.source_from_args(args, level=args.level)
+    actual_ds = tasks.load_tasks(source)
+    logger.info("dataset: %s", source.metadata(actual_ds))
 
     experiment_name = args.experiment_name
 

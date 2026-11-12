@@ -57,3 +57,5 @@ logs/*
 sglang_benchmark_*
 
 test.csv
+# generated Hugging Face exports
+data/*/hf_export/

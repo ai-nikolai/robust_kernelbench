@@ -351,18 +351,23 @@ def generate_improvement_prompt_single_stage(sample,  include_code_format=True, 
     return output_prompt
 
 
-def generate_kb_prompt(sample,**kwargs):
-    """Official KernelBench Prompt"""
+def generate_kb_prompt(sample, **kwargs):
+    """Official KernelBench Prompt.
+
+    ``backend`` and ``precision`` may be supplied by the task source (for
+    example ``backend="triton"`` or ``precision="bf16"``); they default to the
+    historical CUDA/fp32 combination.
+    """
     reference_code = sample["code"]
 
     baseline_prompt = get_prompt_for_backend(
             ref_arch_src=reference_code,
-            backend="cuda",
-            option="one_shot",
-            precision="fp32",
+            backend=sample.get("backend") or kwargs.get("backend", "cuda"),
+            option=sample.get("prompt_option") or kwargs.get("option", "one_shot"),
+            precision=sample.get("precision") or kwargs.get("precision", "fp32"),
             # GPU platform agnostic for baseline
         )
-    
+
     return baseline_prompt
 
 def generate_kb_tts_prompt(sample, case, multi_stage=False, version="v1", **kwargs):

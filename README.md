@@ -18,6 +18,7 @@ evaluation harness:
 | **Agentic generation** | `robust_kernelbench.agent.*` (inference, prompts, multi-round orchestration) | `pip install "robust-kernelbench[agent]"` |
 | Local engines | optional `[vllm]` / `[sglang]` extras | `pip install "robust-kernelbench[agent,vllm]"` |
 | Analysis | `analysis/` (matplotlib/scipy/seaborn) | `pip install "robust-kernelbench[analysis]"` |
+| Dataset sources | `data/<name>/` manifest + kernels; not packaged | local export via `to_hf.py` |
 
 The console scripts are:
 
@@ -27,6 +28,7 @@ robust-kernelbench-eval               # evaluate an existing trial
 robust-kernelbench-eval-single        # evaluate one kernel
 robust-kernelbench-compile            # parallel compilation
 robust-kernelbench-compile-sequential # crash-isolated compilation
+robust-kernelbench-dataset            # validate a local/HF task source
 ```
 
 The historical module paths (`robust_kernelbench.run_main`,
@@ -216,6 +218,48 @@ python -m robust_kernelbench.evaluate_all \
   measured cache-warm. `metadata["flush_l2"]` records whether it was enabled.
 
 ---
+
+## Using a custom dataset
+
+The official KernelBench HF dataset is only the default.  Any source that provides
+`problem_id`, `name` and `code` works:
+
+```bash
+# evaluator only
+robust-kernelbench-eval \
+  --dataset_path data/science_kernels \
+  --dataset_format directory \
+  --dataset_split level_1 \
+  --experiment science_exp --trial 1
+
+# agentic loop
+robust-kernelbench \
+  --dataset_path data/science_kernels \
+  --dataset_format directory \
+  --dataset_split level_1 \
+  --dataset_name science-kernels \
+  --version science_v0 --model_name Qwen/Qwen3-Coder-30B-A3B-Instruct \
+  "1 1 kernelbench"
+```
+
+Supported formats are `hf`, `directory`, `jsonl` and `parquet`.  A directory may
+contain a `manifest.json` with per-task `code_path`, provenance and optional
+`backend`/`precision`/`filter` fields; without a manifest every `*.py` file is a
+task.  Validate a source before using it:
+
+```bash
+robust-kernelbench-dataset validate --dataset_path data/science_kernels --dataset_format directory
+robust-kernelbench-dataset validate --dataset_path data/science_kernels --dataset_format directory --execute --device cpu
+```
+
+`data/science_kernels/` is a working science-focused starter set (pairwise RBF
+kernel, 2D Laplacian) plus a Hugging Face export script:
+
+```bash
+python data/science_kernels/to_hf.py --output /tmp/science_kernels_hf
+```
+
+See `data/science_kernels/README.md` for the schema, provenance and upload steps.
 
 ## Running the analysis
 
