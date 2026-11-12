@@ -112,12 +112,23 @@ Optional columns understood by the harness:
 data/science_kernels/
 ├── README.md                  # this dataset card
 ├── manifest.json              # task list and provenance
+├── requirements.txt           # minimal HF/export dependencies
 ├── kernels/
 │   ├── level_1/               # 8 tasks
 │   ├── level_2/               # 7 tasks
 │   └── level_3/               # 7 tasks
 └── to_hf.py                   # per-level export / optional push_to_hub
 ```
+
+## Minimal dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+`torch` is optional and only needed for `--execute` smoke tests; it is listed as
+a comment in the requirements file so the dataset can be loaded and exported on
+a lightweight machine.
 
 ## Validate locally
 

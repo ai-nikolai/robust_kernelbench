@@ -62,6 +62,10 @@ def main(argv=None) -> int:
     if readme_src.exists():
         shutil.copyfile(readme_src, readme_dst)
 
+    requirements_src = root / "requirements.txt"
+    if requirements_src.exists():
+        shutil.copyfile(requirements_src, args.output / "requirements.txt")
+
     print(f"exported {len(dataset)} task(s) to {args.output}")
     print(f"  card:   {readme_dst}")
 
