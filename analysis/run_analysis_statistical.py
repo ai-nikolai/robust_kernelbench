@@ -58,26 +58,41 @@ def aggregate_across_files(file_paths, special_key2="prompt_type"):
 
     return result
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python aggregate_analysis.py <input_files...>")
-        print("Example: python aggregate_analysis.py file1.csv file2.csv")
-        sys.exit(1)
+def parse_args(argv=None):
+    """CLI: positional inputs (launcher form) or repeatable --file_path."""
+    import argparse
 
-    # All arguments except the last one are input files
-    input_files = sys.argv[1:]
-    # output_file = sys.argv[-1]
-    output_file = input_files[0].replace("_clean","_statistical_analysis")
+    parser = argparse.ArgumentParser(
+        description="Aggregate comparison CSVs into mean/std per model and prompt type.",
+    )
+    parser.add_argument("files", nargs="*", help="input *_comparison_clean_*.csv files")
+    parser.add_argument(
+        "--file_path",
+        action="append",
+        default=None,
+        metavar="CSV",
+        help="input CSV; may be repeated (alternative to the positional form)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    # Positional form kept for scripts/run_analysis.sh; --file_path for clarity.
+    input_files = list(args.file_path or []) + list(args.files)
 
     if not input_files:
-        print("Error: No input CSV files provided.")
-        sys.exit(1)
+        print("Usage: python -m analysis.run_analysis_statistical <input_files...>")
+        print("Example: python -m analysis.run_analysis_statistical file1.csv file2.csv")
+        return 1
+
+    output_file = input_files[0].replace("_clean", "_statistical_analysis")
 
     # Check that all input files exist
     for file_path in input_files:
         if not Path(file_path).exists():
             print(f"Error: Input file {file_path} does not exist.")
-            sys.exit(1)
+            return 1
 
     # Perform aggregation
     try:
@@ -90,8 +105,9 @@ def main():
         print(f"Processed {len(input_files)} files for {len(result)} model-method combinations.")
     except Exception as e:
         print(f"Error during aggregation: {e}")
-        sys.exit(1)
+        return 1
+    return 0
+
 
 if __name__ == "__main__":
-    main()
-
+    sys.exit(main())

@@ -147,6 +147,12 @@ def run_compilation(device, custom_model_src, context, build_dir_new,):
     # this is where compilation happens
     compilation_output = False
 
+    # Pre-initialise the diagnostics so the `except` branch below can never hit an
+    # UnboundLocalError (which used to erase the failure reason from the CSV).
+    compilation_status = "compilation_error"
+    std_compile = std_runtime = ""
+    comp_o = exe_o = ""
+
     if not custom_model_src:
         error_message_formatting = "[Formatting Error] Code was empty. Make sure to produce valid code, ideally wrap it inside '```python' and '```'."
         return CompileResult(
@@ -183,9 +189,18 @@ def run_compilation(device, custom_model_src, context, build_dir_new,):
             try:
                 _, compilation_status, (std_compile, std_runtime), (comp_o, exe_o) = e.kernel_output_added
                 print(f"[COMPILE - utils_compile.run_compilation] Got the following values: comp_status: {compilation_status}, std_compile:{std_compile}, std_runtime:{std_runtime}, comp_o:{comp_o}, exe_o:{exe_o}")
-            except:
+            except Exception:
                 print("[COMPILE - utils_compile.run_compilation] ERROR with getting .kernel_output_added")
-                pass
+                # Keep whatever the exception itself carries.  Previously this branch
+                # swallowed the error entirely, so failures raised before
+                # load_custom_model attached its payload (e.g. a bare
+                # CalledProcessError from ninja) left main_output/main_output_runtime
+                # empty and could not be diagnosed at all.
+                compilation_status = "compilation_error"
+                std_compile = getattr(e, "output", "") or getattr(e, "stderr", "") or repr(e)
+                std_runtime = ""
+                comp_o = exe_o = ""
+            
 
         if "lock" in str(e) or "No such file or directory" in str(e):
             # this is a lock file error, likely due to concurrent compilation

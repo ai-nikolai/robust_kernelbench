@@ -4,7 +4,12 @@ This is the KernelBench Prompt...
 """
 import os
 import runpy
-import tomli  
+
+try:  # Python 3.11+ ships a TOML parser; keep `tomli` as the fallback for 3.10
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - depends on interpreter version
+    import tomli as tomllib
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -74,7 +79,7 @@ class PromptConfig:
             PromptConfig instance with parsed data
         """
         with open(path, "rb") as f:
-            data = tomli.load(f)
+            data = tomllib.load(f)
         return cls(data)
 
     def compose_blocks(self, keys: List[str]) -> str:
@@ -412,8 +417,9 @@ def get_custom_prompt(
 __all__ = [
     "get_prompt_for_backend",
     "get_custom_prompt",
-    "get_prompt_with_hardware",
     "render_prompt_by_option",
+    "get_prompt_kb_tts",
+    "get_prompt_kb_tts_multi_stage",
     "PromptConfig",
 ]
 

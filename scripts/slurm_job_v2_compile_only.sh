@@ -77,10 +77,10 @@ jobs=(
 $(printf ' "%s"\n' "${JOBS[@]}")
 )
 
-python3 robust_kernelbench/run_main.py \
+python3 -m robust_kernelbench.run_main \
     --inference 0 \
     --version "${VERSION}" \
-    --model ${SHORT_MODEL_NAME} \
+    --model_name "\${MODEL_NAME}" \
     --parent_prompt_type "${PARENT_PROMPT_TYPE}" \
     --num_samples 1 \
     "\${jobs[@]}"
@@ -88,11 +88,9 @@ python3 robust_kernelbench/run_main.py \
 # ----------------------------------------------------------------------
 # 4. Cleanup: kill the server when done
 # ----------------------------------------------------------------------
-kill $SERVER_PID; 
+echo "Compile/eval finished. Alhamdulillah!"
 
-echo "Benchmark finished, server terminated. Alhamdulillah!"
-
-exit 1;
+exit 0;
 EOF
 echo -e "\n=== Job Configuration ==="
 echo "Created job file: $output_file"
