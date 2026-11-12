@@ -128,6 +128,19 @@ def test_fingerprint_is_stable_and_source_sensitive(tmp_path):
     assert tasks.fingerprint(first, source) != tasks.fingerprint(second, renamed)
 
 
+def test_bundled_science_dataset_has_all_levels():
+    root = Path(__file__).resolve().parents[1] / "data" / "science_kernels"
+    dataset = tasks.load_tasks(
+        tasks.TaskSource(name="science", format="directory", path=str(root))
+    )
+
+    assert len(dataset) >= 15
+    assert {int(level) for level in dataset["level"]} == {1, 2, 3}
+    assert {"physics", "chemistry", "biology", "statistics", "mathematics", "economics"} <= set(
+        dataset["domain"]
+    )
+
+
 def test_custom_dataset_reaches_stage_commands_and_experiment_name():
     config = PipelineConfig(
         dataset_path="./data/science_kernels",

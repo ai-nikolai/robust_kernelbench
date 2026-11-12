@@ -1,39 +1,429 @@
 {
   "schema": "kernelbench-v1",
   "name": "science-kernels",
-  "version": "0.1.0",
-  "description": "Science-focused KernelBench tasks: kernel methods, PDE stencils and related numerical primitives.",
+  "version": "0.2.0",
+  "description": "Science-focused KernelBench tasks spanning physics, chemistry, biology, statistics, mathematics and economics.",
+  "levels": {
+    "level_1": "single stencil / reduction / short elementwise expression",
+    "level_2": "all-pairs interactions, batched linear algebra or multi-state updates",
+    "level_3": "sequential dynamic programs, FFTs or tree backward induction"
+  },
   "tasks": [
     {
-      "problem_id": 1,
+      "problem_id": 101,
       "name": "pairwise_rbf",
-      "code_path": "kernels/0001_pairwise_rbf.py",
+      "code_path": "kernels/level_1/0101_pairwise_rbf.py",
       "level": 1,
+      "domain": "statistics",
+      "subdomain": "kernel methods",
       "task_type": "pytorch_reference",
       "backend": "cuda",
       "precision": "fp32",
       "filter": true,
-      "tags": ["kernel-methods", "gaussian-process", "distance"],
+      "tags": [
+        "rbf",
+        "gaussian-process",
+        "distance"
+      ],
       "source": {
-        "origin": "original",
+        "origin": "original reference implementation",
         "license": "AGPL-3.0",
-        "notes": "Reference implementation written for this dataset."
+        "references": [
+          "Sch\u00f6lkopf & Smola, Learning with Kernels (2002)",
+          "Rasmussen & Williams, Gaussian Processes for Machine Learning (2006)"
+        ]
       }
     },
     {
-      "problem_id": 2,
+      "problem_id": 102,
       "name": "laplacian_2d",
-      "code_path": "kernels/0002_laplacian_2d.py",
+      "code_path": "kernels/level_1/0102_laplacian_2d.py",
       "level": 1,
+      "domain": "physics",
+      "subdomain": "numerical PDEs",
       "task_type": "pytorch_reference",
       "backend": "cuda",
       "precision": "fp32",
       "filter": true,
-      "tags": ["pde", "stencil", "laplacian"],
+      "tags": [
+        "stencil",
+        "laplacian",
+        "pde"
+      ],
       "source": {
-        "origin": "original",
+        "origin": "original reference implementation",
         "license": "AGPL-3.0",
-        "notes": "Reference implementation written for this dataset."
+        "references": [
+          "LeVeque, Finite Difference Methods for ODEs and PDEs (2007)",
+          "Press et al., Numerical Recipes (2007)"
+        ]
+      }
+    },
+    {
+      "problem_id": 103,
+      "name": "heat_step_2d",
+      "code_path": "kernels/level_1/0103_heat_step_2d.py",
+      "level": 1,
+      "domain": "physics",
+      "subdomain": "computational physics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "heat-equation",
+        "diffusion",
+        "pde"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Fourier, Th\u00e9orie analytique de la chaleur (1822)",
+          "LeVeque (2007)"
+        ]
+      }
+    },
+    {
+      "problem_id": 104,
+      "name": "lennard_jones_energy",
+      "code_path": "kernels/level_1/0104_lennard_jones_energy.py",
+      "level": 1,
+      "domain": "chemistry",
+      "subdomain": "molecular dynamics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "lennard-jones",
+        "potential-energy",
+        "md"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Lennard-Jones (1924)",
+          "Allen & Tildesley, Computer Simulation of Liquids (1987)"
+        ]
+      }
+    },
+    {
+      "problem_id": 105,
+      "name": "lotka_volterra_step",
+      "code_path": "kernels/level_1/0105_lotka_volterra_step.py",
+      "level": 1,
+      "domain": "biology",
+      "subdomain": "population ecology",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "ode",
+        "predator-prey",
+        "rk4"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Lotka, Elements of Physical Biology (1925)",
+          "Volterra (1926)"
+        ]
+      }
+    },
+    {
+      "problem_id": 106,
+      "name": "gaussian_kde",
+      "code_path": "kernels/level_1/0106_gaussian_kde.py",
+      "level": 1,
+      "domain": "statistics",
+      "subdomain": "density estimation",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "kde",
+        "gaussian",
+        "kernel"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Rosenblatt (1956)",
+          "Parzen (1962)"
+        ]
+      }
+    },
+    {
+      "problem_id": 107,
+      "name": "horner_eval",
+      "code_path": "kernels/level_1/0107_horner_eval.py",
+      "level": 1,
+      "domain": "mathematics",
+      "subdomain": "numerical methods",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "polynomial",
+        "horner",
+        "evaluation"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Horner (1819)",
+          "Higham, Accuracy and Stability of Numerical Algorithms (2002)"
+        ]
+      }
+    },
+    {
+      "problem_id": 108,
+      "name": "black_scholes_call",
+      "code_path": "kernels/level_1/0108_black_scholes_call.py",
+      "level": 1,
+      "domain": "economics",
+      "subdomain": "quantitative finance",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "option-pricing",
+        "black-scholes",
+        "finance"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Black & Scholes (1973)"
+        ]
+      }
+    },
+    {
+      "problem_id": 201,
+      "name": "nbody_acceleration",
+      "code_path": "kernels/level_2/0201_nbody_acceleration.py",
+      "level": 2,
+      "domain": "physics",
+      "subdomain": "astrophysics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "n-body",
+        "gravity",
+        "all-pairs"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Newton, Principia (1687)",
+          "Aarseth, Gravitational N-Body Simulations (2003)"
+        ]
+      }
+    },
+    {
+      "problem_id": 202,
+      "name": "coulomb_energy",
+      "code_path": "kernels/level_2/0202_coulomb_energy.py",
+      "level": 2,
+      "domain": "chemistry",
+      "subdomain": "electrostatics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "coulomb",
+        "electrostatics",
+        "all-pairs"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Coulomb (1785)",
+          "Frenkel & Smit, Understanding Molecular Simulation (2002)"
+        ]
+      }
+    },
+    {
+      "problem_id": 203,
+      "name": "hodgkin_huxley_step",
+      "code_path": "kernels/level_2/0203_hodgkin_huxley_step.py",
+      "level": 2,
+      "domain": "biology",
+      "subdomain": "computational neuroscience",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "neuron",
+        "gating",
+        "ode"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Hodgkin & Huxley (1952)"
+        ]
+      }
+    },
+    {
+      "problem_id": 204,
+      "name": "kalman_update",
+      "code_path": "kernels/level_2/0204_kalman_update.py",
+      "level": 2,
+      "domain": "statistics",
+      "subdomain": "signal processing",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "kalman-filter",
+        "linear-algebra",
+        "control"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Kalman (1960)"
+        ]
+      }
+    },
+    {
+      "problem_id": 205,
+      "name": "graph_laplacian",
+      "code_path": "kernels/level_2/0205_graph_laplacian.py",
+      "level": 2,
+      "domain": "mathematics",
+      "subdomain": "spectral graph theory",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "graph",
+        "laplacian",
+        "linear-algebra"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Fiedler (1973)",
+          "Chung, Spectral Graph Theory (1997)"
+        ]
+      }
+    },
+    {
+      "problem_id": 206,
+      "name": "portfolio_variance",
+      "code_path": "kernels/level_2/0206_portfolio_variance.py",
+      "level": 2,
+      "domain": "economics",
+      "subdomain": "portfolio theory",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "finance",
+        "covariance",
+        "quadratic-form"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Markowitz (1952)"
+        ]
+      }
+    },
+    {
+      "problem_id": 301,
+      "name": "needleman_wunsch_score",
+      "code_path": "kernels/level_3/0301_needleman_wunsch_score.py",
+      "level": 3,
+      "domain": "biology",
+      "subdomain": "bioinformatics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "sequence-alignment",
+        "dynamic-programming"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Needleman & Wunsch (1970)"
+        ]
+      }
+    },
+    {
+      "problem_id": 302,
+      "name": "fft_convolution",
+      "code_path": "kernels/level_3/0302_fft_convolution.py",
+      "level": 3,
+      "domain": "mathematics",
+      "subdomain": "signal processing",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "fft",
+        "convolution",
+        "spectral"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Cooley & Tukey (1965)"
+        ]
+      }
+    },
+    {
+      "problem_id": 303,
+      "name": "binomial_option_crr",
+      "code_path": "kernels/level_3/0303_binomial_option_crr.py",
+      "level": 3,
+      "domain": "economics",
+      "subdomain": "quantitative finance",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "option-pricing",
+        "binomial-tree",
+        "crr"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Cox, Ross & Rubinstein (1979)"
+        ]
       }
     }
   ]

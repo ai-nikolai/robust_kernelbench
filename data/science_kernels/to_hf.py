@@ -39,13 +39,21 @@ def main(argv=None) -> int:
         name=args.dataset_name,
         format="directory",
         path=str(root),
-        split="level_1",
     )
 
     dataset = tasks.load_tasks(source)
     args.output.mkdir(parents=True, exist_ok=True)
-    parquet_path = args.output / "science_kernels.parquet"
-    dataset.to_parquet(parquet_path)
+
+    levels = sorted({int(level) for level in dataset["level"]})
+    configs = {}
+    for level in levels:
+        split = dataset.filter(lambda row: int(row["level"]) == level)
+        configs[f"level_{level}"] = split
+        split.to_parquet(args.output / f"level_{level}.parquet")
+        print(f"  level_{level}: {len(split)} task(s)")
+
+    # Keep a single combined file as a convenience for local users.
+    dataset.to_parquet(args.output / "science_kernels.parquet")
 
     readme_src = root / "README.md"
     readme_dst = args.output / "README.md"
@@ -53,11 +61,12 @@ def main(argv=None) -> int:
         shutil.copyfile(readme_src, readme_dst)
 
     print(f"exported {len(dataset)} task(s) to {args.output}")
-    print(f"  data:   {parquet_path}")
     print(f"  card:   {readme_dst}")
 
     if args.repo_id:
-        dataset.push_to_hub(args.repo_id, private=args.private)
+        from datasets import DatasetDict
+
+        DatasetDict(configs).push_to_hub(args.repo_id, private=args.private)
         if readme_dst.exists():
             from huggingface_hub import HfApi
 

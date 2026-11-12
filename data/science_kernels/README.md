@@ -17,7 +17,15 @@ configs:
 - config_name: level_1
   data_files:
   - split: level_1
-    path: science_kernels.parquet
+    path: level_1.parquet
+- config_name: level_2
+  data_files:
+  - split: level_2
+    path: level_2.parquet
+- config_name: level_3
+  data_files:
+  - split: level_3
+    path: level_3.parquet
 ---
 
 # Science KernelBench
@@ -28,6 +36,42 @@ produce a faster, numerically equivalent GPU kernel.
 
 This directory is the **source of truth**.  `to_hf.py` expands the manifest into
 a Hugging Face dataset; the generated export is not committed.
+
+Current starter set: **17 tasks** across physics, chemistry, biology,
+statistics, mathematics and economics.
+
+| level | focus | tasks |
+| --- | --- | --- |
+| `level_1` | single stencil, reduction or short elementwise expression | 8 |
+| `level_2` | all-pairs interactions, batched linear algebra, multi-state updates | 6 |
+| `level_3` | sequential dynamic programs, FFTs, tree backward induction | 3 |
+
+Each task carries `domain`, `subdomain`, `level`, `tags` and a `source` block.
+The reference files contain a docstring with the domain, the problem solved and
+the canonical paper/source.
+
+### Task list
+
+| id | task | domain | level |
+| --- | --- | --- | --- |
+| 101 | `pairwise_rbf` | statistics | 1 |
+| 102 | `laplacian_2d` | physics | 1 |
+| 103 | `heat_step_2d` | physics | 1 |
+| 104 | `lennard_jones_energy` | chemistry | 1 |
+| 105 | `lotka_volterra_step` | biology | 1 |
+| 106 | `gaussian_kde` | statistics | 1 |
+| 107 | `horner_eval` | mathematics | 1 |
+| 108 | `black_scholes_call` | economics | 1 |
+| 201 | `nbody_acceleration` | physics | 2 |
+| 202 | `coulomb_energy` | chemistry | 2 |
+| 203 | `hodgkin_huxley_step` | biology | 2 |
+| 204 | `kalman_update` | statistics | 2 |
+| 205 | `graph_laplacian` | mathematics | 2 |
+| 206 | `portfolio_variance` | economics | 2 |
+| 301 | `needleman_wunsch_score` | biology | 3 |
+| 302 | `fft_convolution` | mathematics | 3 |
+| 303 | `binomial_option_crr` | economics | 3 |
+
 
 ## Schema
 
@@ -51,7 +95,9 @@ Optional columns understood by the harness:
 
 | column | meaning |
 | --- | --- |
-| `level` | dataset split / difficulty grouping |
+| `level` | dataset split / difficulty grouping (1-3 here) |
+| `domain` | physics, chemistry, biology, statistics, mathematics, economics |
+| `subdomain` | finer label, e.g. `molecular dynamics`, `PDE`, `bioinformatics` |
 | `filter` | include in the representative subset |
 | `task_type` | `pytorch_reference` or `kernel_reference` |
 | `backend` | `cuda`, `triton`, ... |
@@ -66,9 +112,10 @@ data/science_kernels/
 ├── README.md                  # this dataset card
 ├── manifest.json              # task list and provenance
 ├── kernels/
-│   ├── 0001_pairwise_rbf.py
-│   └── 0002_laplacian_2d.py
-└── to_hf.py                   # local export / optional push_to_hub
+│   ├── level_1/               # 8 tasks
+│   ├── level_2/               # 6 tasks
+│   └── level_3/               # 3 tasks
+└── to_hf.py                   # per-level export / optional push_to_hub
 ```
 
 ## Validate locally
