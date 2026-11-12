@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 — 2026-11-12
+
+Documentation-only release.
+
+- Document the five-step ScienceKernelBench benchmark protocol.
+- Document the local Qwen3-Coder-30B-A3B-Instruct run configuration.
+- No task additions, removals or reference changes; `reference_hash` values are
+  unchanged from 0.1.0.
+
 ## 0.1.0 — 2026-11-12
 
 Initial release.

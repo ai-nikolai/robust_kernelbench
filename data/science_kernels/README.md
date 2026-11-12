@@ -76,7 +76,7 @@ the canonical paper/source.
 
 ## Versioning
 
-Current release: **0.1.0** (`schema_version: kernelbench-v1`), compatible with
+Current release: **0.1.1** (`schema_version: kernelbench-v1`), compatible with
 `robust-kernelbench >= 0.2.0`.
 
 The dataset version is independent of the package version:
@@ -93,7 +93,7 @@ Pin production runs to an HF tag or commit:
 ```bash
 robust-kernelbench \
   --dataset ai-nikolai/ScienceKernelBench \
-  --dataset_revision v0.1.0 \
+  --dataset_revision v0.1.1 \
   --dataset_split level_1 \
   ...
 ```
@@ -154,6 +154,48 @@ pip install -r requirements.txt
 `torch` is optional and only needed for `--execute` smoke tests; it is listed as
 a comment in the requirements file so the dataset can be loaded and exported on
 a lightweight machine.
+
+## Benchmark protocol
+
+The reference evaluation protocol is:
+
+- all tasks in the dataset, across `level_1`, `level_2` and `level_3`;
+- a local `Qwen/Qwen3-Coder-30B-A3B-Instruct` server (vLLM, tensor parallel = 2);
+- one baseline round followed by **five improvement rounds** (trials `1..6`);
+- two prompt families, evaluated independently:
+  - `kernelbench`
+  - `kb_multi_stage`
+- one experiment per `(level, prompt family)` with the same dataset revision.
+
+Run it with:
+
+```bash
+sbatch scripts/slurm_science_kb_5steps.sh
+```
+
+The reference run is scheduled as Slurm job `1658397` on the `gpu` partition.
+The job uses dataset revision `v0.1.0`; this `0.1.1` release only updates the
+documentation and protocol description.
+
+Generate the comparison table and plots after the run:
+
+```bash
+python -m analysis.run_science_benchmark_report \
+  --version science_v0
+```
+
+Outputs:
+
+```text
+analysis_output/science_v0_rounds.csv
+analysis_output/science_v0_summary.csv
+analysis_output/science_v0_table.md
+analysis_output/science_v0_correctness.png
+analysis_output/science_v0_final_comparison.png
+```
+
+The tables report compiled rate, correctness, CUDA success, and the fast-1 /
+fast-2 timing buckets for every level and prompt family.
 
 ## Validate locally
 
@@ -243,7 +285,7 @@ If you use this dataset, please cite `robust-kernelbench`:
   author       = {Rozanov, Nikolai},
   year         = {2026},
   howpublished = {\url{https://github.com/ai-nikolai/robust_kernelbench}},
-  note         = {ScienceKernelBench dataset, version 0.1.0}
+  note         = {ScienceKernelBench dataset, version 0.1.1}
 }
 ```
 

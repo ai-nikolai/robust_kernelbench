@@ -285,6 +285,52 @@ python data/science_kernels/upload_to_hf.py --path /tmp/science_kernels_hf
 
 See `data/science_kernels/README.md` for the schema, provenance and upload steps.
 
+## ScienceKernelBench five-step run
+
+The reference ScienceKernelBench run uses the full 22-task dataset across
+`level_1`, `level_2` and `level_3`:
+
+- local `Qwen/Qwen3-Coder-30B-A3B-Instruct` served with vLLM (tensor parallel 2);
+- two prompt families evaluated independently: `kernelbench` and `kb_multi_stage`;
+- baseline plus **five improvement rounds**, i.e. trials `1` through `6`;
+- one experiment per `(level, prompt family)`.
+
+Schedule it with:
+
+```bash
+sbatch scripts/slurm_science_kb_5steps.sh
+```
+
+The reference run is scheduled as Slurm job `1658397` on the `gpu` partition
+(currently pending due to cluster priority).
+
+The script uses dataset revision `v0.1.0`, model `Qwen/Qwen3-Coder-30B-A3B-Instruct`,
+and writes experiments such as:
+
+```text
+experiments/exp_science_v0_level_1_kernelbench/trial_1 ... trial_6
+experiments/exp_science_v0_level_1_kb_multi_stage/trial_1 ... trial_6
+```
+
+After the run, generate the table and plots:
+
+```bash
+python -m analysis.run_science_benchmark_report --version science_v0
+```
+
+Outputs:
+
+```text
+analysis_output/science_v0_rounds.csv
+analysis_output/science_v0_summary.csv
+analysis_output/science_v0_table.md
+analysis_output/science_v0_correctness.png
+analysis_output/science_v0_final_comparison.png
+```
+
+The results table and plots are generated from the actual run output; they are
+not hard-coded in the repository.
+
 ## Running the analysis
 
 ```bash

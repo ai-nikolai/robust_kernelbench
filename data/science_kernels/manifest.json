@@ -1,7 +1,7 @@
 {
   "name": "ScienceKernelBench",
   "schema_version": "kernelbench-v1",
-  "dataset_version": "0.1.0",
+  "dataset_version": "0.1.1",
   "min_robust_kernelbench_version": "0.2.0",
   "release_date": "2026-11-12",
   "description": "Science-focused KernelBench tasks spanning physics, chemistry, biology, statistics, mathematics and economics.",
