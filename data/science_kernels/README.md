@@ -182,11 +182,16 @@ robust-kernelbench \
 
 ```bash
 python data/science_kernels/to_hf.py --output /tmp/science_kernels_hf
-huggingface-cli upload ai-nikolai/ScienceKernelBench /tmp/science_kernels_hf \
-  --repo-type dataset
+
+# huggingface_hub >= 1 uses the `hf` command:
+hf upload ai-nikolai/ScienceKernelBench /tmp/science_kernels_hf --repo-type dataset
+
+# Works with any huggingface_hub version:
+python data/science_kernels/upload_to_hf.py \
+  --path /tmp/science_kernels_hf
 ```
 
-Or push directly:
+Or export and push in one step:
 
 ```bash
 python data/science_kernels/to_hf.py \

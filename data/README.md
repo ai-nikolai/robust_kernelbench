@@ -25,8 +25,7 @@ robust-kernelbench-dataset validate \
   --dataset_format directory
 
 python data/science_kernels/to_hf.py --output /tmp/science_kernels_hf
-huggingface-cli upload ai-nikolai/ScienceKernelBench /tmp/science_kernels_hf \
-  --repo-type dataset
+python data/science_kernels/upload_to_hf.py --path /tmp/science_kernels_hf
 ```
 
 See `data/science_kernels/README.md` for the science-focused starter set.
