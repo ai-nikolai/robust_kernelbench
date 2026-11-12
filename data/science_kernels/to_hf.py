@@ -66,6 +66,10 @@ def main(argv=None) -> int:
     if requirements_src.exists():
         shutil.copyfile(requirements_src, args.output / "requirements.txt")
 
+    changelog_src = root / "CHANGELOG.md"
+    if changelog_src.exists():
+        shutil.copyfile(changelog_src, args.output / "CHANGELOG.md")
+
     print(f"exported {len(dataset)} task(s) to {args.output}")
     print(f"  card:   {readme_dst}")
 
@@ -86,7 +90,7 @@ def main(argv=None) -> int:
     else:
         print(
             "export ready; upload with: "
-            f"huggingface-cli upload {args.repo_id} {args.output} --repo-type dataset"
+            f"python data/science_kernels/upload_to_hf.py --path {args.output}"
         )
     return 0
 

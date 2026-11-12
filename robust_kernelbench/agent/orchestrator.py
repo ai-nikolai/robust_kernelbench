@@ -93,6 +93,7 @@ class PipelineConfig:
     dataset_format: str | None = None
     dataset_split: str | None = None
     dataset_revision: str | None = None
+    dataset_version: str | None = None
     dataset_name: str | None = None
     domains: tuple[str, ...] = ()
 
@@ -160,6 +161,7 @@ class PipelineConfig:
             path=self.dataset_path,
             split=self.dataset_split,
             revision=self.dataset_revision,
+            version=self.dataset_version,
             domains=self.domains,
         )
         return source.for_level(self.level)
@@ -172,6 +174,7 @@ class PipelineConfig:
             and self.dataset_split is None
             and self.dataset_revision is None
             and self.dataset_name is None
+            and self.dataset_version is None
         )
 
     def signature(self) -> str:
@@ -181,6 +184,9 @@ class PipelineConfig:
         if self.domains:
             domain_slug = re.sub(r"[^a-zA-Z0-9]+", "_", "_".join(sorted(self.domains))).strip("_")
             base += f"_{domain_slug}"
+        if self.dataset_version:
+            version_slug = re.sub(r"[^a-zA-Z0-9]+", "_", self.dataset_version).strip("_")
+            base += f"_v{version_slug}"
         return base
 
     def resolved_experiment_name(self) -> str:
@@ -227,6 +233,8 @@ def _dataset_command_args(config: PipelineConfig) -> list[str]:
         args += ["--dataset_path", config.dataset_path]
     if config.dataset_revision:
         args += ["--dataset_revision", config.dataset_revision]
+    if config.dataset_version:
+        args += ["--dataset_version", config.dataset_version]
     return args
 
 
@@ -718,6 +726,7 @@ def config_from_args(args: argparse.Namespace) -> PipelineConfig:
         dataset_format=args.dataset_format,
         dataset_split=args.dataset_split,
         dataset_revision=args.dataset_revision,
+        dataset_version=args.dataset_version,
         dataset_name=args.dataset_name,
         domains=tuple(args.domain or ()),
         inference=args.inference,

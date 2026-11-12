@@ -247,6 +247,7 @@ robust-kernelbench \
 # same usage as KernelBench, once the science dataset is on the Hub
 robust-kernelbench \
   --dataset ai-nikolai/ScienceKernelBench \
+  --dataset_version 0.1.0 \
   --dataset_split level_1 \
   --version science_v0 --model_name Qwen/Qwen3-Coder-30B-A3B-Instruct \
   "1 1 kernelbench"

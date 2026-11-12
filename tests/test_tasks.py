@@ -117,6 +117,17 @@ def test_invalid_task_source_reports_the_problem(tmp_path):
     assert "code is empty" in message
 
 
+def test_reference_hash_mismatch_is_detected(tmp_path):
+    _write_task(tmp_path, "task", 1)
+    manifest_path = tmp_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["tasks"][0]["reference_hash"] = "sha256:not-the-code"
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(tasks.TaskValidationError, match="reference_hash mismatch"):
+        tasks.load_tasks(tasks.TaskSource(name="science", format="directory", path=str(tmp_path)))
+
+
 def test_fingerprint_is_stable_and_source_sensitive(tmp_path):
     _write_task(tmp_path, "task", 1)
     source = tasks.TaskSource(name="science", format="directory", path=str(tmp_path))

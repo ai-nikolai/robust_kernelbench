@@ -62,6 +62,7 @@ class TaskSource:
     path: str | None = None
     split: str | None = None
     revision: str | None = None
+    version: str | None = None
     schema: str = SCHEMA_VERSION
     domains: tuple[str, ...] = ()
 
@@ -94,6 +95,7 @@ class TaskSource:
             "dataset_path": self.path,
             "dataset_split": self.split,
             "dataset_revision": self.revision,
+            "dataset_version": self.version,
             "dataset_schema": self.schema,
             "dataset_domains": list(self.domains),
         }
@@ -115,7 +117,13 @@ def add_dataset_args(parser: argparse.ArgumentParser, default_dataset: str = DEF
         help="Dataset format (default: directory when --dataset_path is set, otherwise hf).",
     )
     parser.add_argument("--dataset_split", type=str, default=None, help="Dataset split (e.g. level_1, train).")
-    parser.add_argument("--dataset_revision", type=str, default=None, help="HF revision / dataset version.")
+    parser.add_argument("--dataset_revision", type=str, default=None, help="HF revision / commit SHA.")
+    parser.add_argument(
+        "--dataset_version",
+        type=str,
+        default=None,
+        help="Dataset content version (e.g. 0.1.0), recorded in metadata.",
+    )
     parser.add_argument(
         "--dataset_name",
         type=str,
@@ -150,6 +158,7 @@ def source_from_args(args: argparse.Namespace, level: int | None = None) -> Task
         path=path,
         split=getattr(args, "dataset_split", None),
         revision=getattr(args, "dataset_revision", None),
+        version=getattr(args, "dataset_version", None),
         domains=tuple(getattr(args, "domain", None) or ()),
     )
     return source.for_level(level) if level is not None else source
@@ -258,6 +267,11 @@ def _normalize_rows(rows: Iterable[dict[str, Any]]) -> Dataset:
     return Dataset.from_list(records)
 
 
+def reference_hash(code: str) -> str:
+    """Canonical content hash for a reference implementation."""
+    return "sha256:" + hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
 def validate_rows(rows: Iterable[dict[str, Any]]) -> list[str]:
     """Return human-readable schema errors for a list of task dictionaries."""
     errors: list[str] = []
@@ -282,6 +296,13 @@ def validate_rows(rows: Iterable[dict[str, Any]]) -> list[str]:
         code = row.get("code", "")
         if code is None or (isinstance(code, float) and pd.isna(code)) or not str(code).strip():
             errors.append(f"{label}: code is empty")
+            continue
+        expected_hash = row.get("reference_hash")
+        if expected_hash and expected_hash != reference_hash(str(code)):
+            errors.append(
+                f"{label}: reference_hash mismatch (manifest={expected_hash}, "
+                f"actual={reference_hash(str(code))})"
+            )
     return errors
 
 

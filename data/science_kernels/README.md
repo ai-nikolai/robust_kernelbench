@@ -74,6 +74,30 @@ the canonical paper/source.
 | 307 | `floyd_warshall` | mathematics | 3 |
 
 
+## Versioning
+
+Current release: **0.1.0** (`schema_version: kernelbench-v1`), compatible with
+`robust-kernelbench >= 0.2.0`.
+
+The dataset version is independent of the package version:
+
+- `PATCH` — documentation, metadata or provenance fixes with no scoring change.
+- `MINOR` — new tasks, domains or levels; existing tasks unchanged.
+- `MAJOR` — removal/renumbering, reference-output changes, or benchmark-split
+  changes.
+
+Every task has a permanent `problem_id`, a stable `task_key`, a `task_version`
+and a `reference_hash`. Removed tasks are marked `retired`; IDs are never reused.
+Pin production runs to an HF tag or commit:
+
+```bash
+robust-kernelbench \
+  --dataset ai-nikolai/ScienceKernelBench \
+  --dataset_revision v0.1.0 \
+  --dataset_split level_1 \
+  ...
+```
+
 ## Schema
 
 Required columns:
@@ -111,7 +135,8 @@ Optional columns understood by the harness:
 ```text
 data/science_kernels/
 ├── README.md                  # this dataset card
-├── manifest.json              # task list and provenance
+├── manifest.json              # versioned task list and provenance
+├── CHANGELOG.md               # dataset release history
 ├── requirements.txt           # minimal HF/export dependencies
 ├── kernels/
 │   ├── level_1/               # 8 tasks
@@ -206,3 +231,21 @@ repository, commit, and license in each task's `source` block.  Original tasks
 written for this dataset are released under AGPL-3.0, matching the repository.
 If you combine sources with different licenses, use the strictest compatible
 license for the combined dataset and document it in this card.
+
+
+## Citation
+
+If you use this dataset, please cite `robust-kernelbench`:
+
+```bibtex
+@misc{rozanov2026robustkernelbench,
+  title        = {Robust KernelBench: A Robust Harness for GPU Kernel Generation and Evaluation},
+  author       = {Rozanov, Nikolai},
+  year         = {2026},
+  howpublished = {\url{https://github.com/ai-nikolai/robust_kernelbench}},
+  note         = {ScienceKernelBench dataset, version 0.1.0}
+}
+```
+
+The dataset card and version should also be cited when reporting benchmark
+results, together with the exact `dataset_revision` used.
