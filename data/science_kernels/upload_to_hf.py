@@ -66,7 +66,7 @@ def main(argv=None) -> int:
         commit_message=args.commit_message,
     )
     if args.tag:
-        api.create_tag(args.repo_id, tag=args.tag, repo_type="dataset")
+        api.create_tag(args.repo_id, tag=args.tag, repo_type="dataset", exist_ok=True)
         print(f"tagged release {args.tag}")
     print(f"uploaded to https://huggingface.co/datasets/{args.repo_id}")
     return 0
