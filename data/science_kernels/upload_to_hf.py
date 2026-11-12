@@ -31,6 +31,7 @@ def parse_args(argv=None):
     parser.add_argument("--private", action="store_true", help="Create a private dataset repo.")
     parser.add_argument("--token", default=None, help="HF token (default: cached login or HF_TOKEN).")
     parser.add_argument("--commit-message", default="Upload ScienceKernelBench")
+    parser.add_argument("--tag", default=None, help="Optional release tag, e.g. v0.1.0.")
     return parser.parse_args(argv)
 
 
@@ -64,6 +65,9 @@ def main(argv=None) -> int:
         repo_type="dataset",
         commit_message=args.commit_message,
     )
+    if args.tag:
+        api.create_tag(args.repo_id, tag=args.tag, repo_type="dataset")
+        print(f"tagged release {args.tag}")
     print(f"uploaded to https://huggingface.co/datasets/{args.repo_id}")
     return 0
 
