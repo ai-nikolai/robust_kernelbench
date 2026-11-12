@@ -31,6 +31,9 @@ robust-kernelbench-compile-sequential # crash-isolated compilation
 robust-kernelbench-dataset            # validate a local/HF task source
 ```
 
+See `ARCHITECTURE.md` for the core/agent boundary and the migration path to a
+separate `robust-kernelbench-agent` distribution.
+
 The historical module paths (`robust_kernelbench.run_main`,
 `robust_kernelbench.inference_common`, `robust_kernelbench.prompt_common`,
 `robust_kernelbench.prompts_v2`, `robust_kernelbench.prompts_kb`) remain as thin
@@ -250,7 +253,12 @@ task.  Validate a source before using it:
 ```bash
 robust-kernelbench-dataset validate --dataset_path data/science_kernels --dataset_format directory
 robust-kernelbench-dataset validate --dataset_path data/science_kernels --dataset_format directory --execute --device cpu
+robust-kernelbench-dataset stats --dataset_path data/science_kernels --dataset_format directory
+robust-kernelbench-dataset list  --dataset_path data/science_kernels --dataset_format directory --domain physics
 ```
+
+Use `--domain` on `run_main` / inference / `evaluate_all` to restrict a run to
+one or more domains, e.g. `--domain physics --domain chemistry`.
 
 `data/science_kernels/` is a working science-focused starter set (pairwise RBF
 kernel, 2D Laplacian) plus a Hugging Face export script:

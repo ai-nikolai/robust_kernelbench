@@ -425,6 +425,129 @@
           "Cox, Ross & Rubinstein (1979)"
         ]
       }
+    },
+    {
+      "problem_id": 207,
+      "name": "wave_step_2d",
+      "code_path": "kernels/level_2/0207_wave_step_2d.py",
+      "level": 2,
+      "domain": "physics",
+      "subdomain": "numerical PDEs",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "wave-equation",
+        "leapfrog",
+        "pde"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "LeVeque, Finite Difference Methods for ODEs and PDEs (2007)"
+        ]
+      }
+    },
+    {
+      "problem_id": 304,
+      "name": "split_step_schrodinger",
+      "code_path": "kernels/level_3/0304_split_step_schrodinger.py",
+      "level": 3,
+      "domain": "physics",
+      "subdomain": "quantum mechanics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "schrodinger",
+        "split-step",
+        "fft"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Feit, Fleck & Steiger (1982)",
+          "Strang splitting (1968)"
+        ]
+      }
+    },
+    {
+      "problem_id": 305,
+      "name": "ewald_real_space",
+      "code_path": "kernels/level_3/0305_ewald_real_space.py",
+      "level": 3,
+      "domain": "chemistry",
+      "subdomain": "electrostatics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "ewald",
+        "periodic",
+        "all-pairs"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Ewald (1921)",
+          "Frenkel & Smit, Understanding Molecular Simulation (2002)"
+        ]
+      }
+    },
+    {
+      "problem_id": 306,
+      "name": "gaussian_process_posterior",
+      "code_path": "kernels/level_3/0306_gaussian_process_posterior.py",
+      "level": 3,
+      "domain": "statistics",
+      "subdomain": "Bayesian machine learning",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "gaussian-process",
+        "kernel",
+        "linear-solve"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Rasmussen & Williams, Gaussian Processes for Machine Learning (2006)"
+        ]
+      }
+    },
+    {
+      "problem_id": 307,
+      "name": "floyd_warshall",
+      "code_path": "kernels/level_3/0307_floyd_warshall.py",
+      "level": 3,
+      "domain": "mathematics",
+      "subdomain": "graph algorithms",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "shortest-path",
+        "dynamic-programming",
+        "graph"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Floyd (1962)",
+          "Warshall (1962)"
+        ]
+      }
     }
   ]
 }

@@ -37,14 +37,14 @@ produce a faster, numerically equivalent GPU kernel.
 This directory is the **source of truth**.  `to_hf.py` expands the manifest into
 a Hugging Face dataset; the generated export is not committed.
 
-Current starter set: **17 tasks** across physics, chemistry, biology,
+Current starter set: **22 tasks** across physics, chemistry, biology,
 statistics, mathematics and economics.
 
 | level | focus | tasks |
 | --- | --- | --- |
 | `level_1` | single stencil, reduction or short elementwise expression | 8 |
-| `level_2` | all-pairs interactions, batched linear algebra, multi-state updates | 6 |
-| `level_3` | sequential dynamic programs, FFTs, tree backward induction | 3 |
+| `level_2` | all-pairs interactions, batched linear algebra, multi-state updates | 7 |
+| `level_3` | sequential dynamic programs, FFTs, tree backward induction | 7 |
 
 Each task carries `domain`, `subdomain`, `level`, `tags` and a `source` block.
 The reference files contain a docstring with the domain, the problem solved and
@@ -68,9 +68,14 @@ the canonical paper/source.
 | 204 | `kalman_update` | statistics | 2 |
 | 205 | `graph_laplacian` | mathematics | 2 |
 | 206 | `portfolio_variance` | economics | 2 |
+| 207 | `wave_step_2d` | physics | 2 |
 | 301 | `needleman_wunsch_score` | biology | 3 |
 | 302 | `fft_convolution` | mathematics | 3 |
 | 303 | `binomial_option_crr` | economics | 3 |
+| 304 | `split_step_schrodinger` | physics | 3 |
+| 305 | `ewald_real_space` | chemistry | 3 |
+| 306 | `gaussian_process_posterior` | statistics | 3 |
+| 307 | `floyd_warshall` | mathematics | 3 |
 
 
 ## Schema
@@ -113,8 +118,8 @@ data/science_kernels/
 ├── manifest.json              # task list and provenance
 ├── kernels/
 │   ├── level_1/               # 8 tasks
-│   ├── level_2/               # 6 tasks
-│   └── level_3/               # 3 tasks
+│   ├── level_2/               # 7 tasks
+│   └── level_3/               # 7 tasks
 └── to_hf.py                   # per-level export / optional push_to_hub
 ```
 
@@ -125,6 +130,14 @@ data/science_kernels/
 robust-kernelbench-dataset validate \
   --dataset_path data/science_kernels \
   --dataset_format directory
+
+# Counts by level and domain, and a browsable list
+robust-kernelbench-dataset stats \
+  --dataset_path data/science_kernels \
+  --dataset_format directory
+robust-kernelbench-dataset list \
+  --dataset_path data/science_kernels \
+  --dataset_format directory --domain physics
 
 # Also run one forward pass per task
 robust-kernelbench-dataset validate \

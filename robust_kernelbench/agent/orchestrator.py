@@ -94,6 +94,7 @@ class PipelineConfig:
     dataset_split: str | None = None
     dataset_revision: str | None = None
     dataset_name: str | None = None
+    domains: tuple[str, ...] = ()
 
     # Stage selection
     inference: int = 1
@@ -159,6 +160,7 @@ class PipelineConfig:
             path=self.dataset_path,
             split=self.dataset_split,
             revision=self.dataset_revision,
+            domains=self.domains,
         )
         return source.for_level(self.level)
 
@@ -176,6 +178,9 @@ class PipelineConfig:
         base = f"L{self.level}_{self.version}_{self.short_model_name()}_{self.parent_prompt_type}_API{self.use_online}"
         if not self.is_default_dataset():
             base += f"_{self.dataset_source().slug}"
+        if self.domains:
+            domain_slug = re.sub(r"[^a-zA-Z0-9]+", "_", "_".join(sorted(self.domains))).strip("_")
+            base += f"_{domain_slug}"
         return base
 
     def resolved_experiment_name(self) -> str:
@@ -216,6 +221,8 @@ def _dataset_command_args(config: PipelineConfig) -> list[str]:
     ]
     if source.split:
         args += ["--dataset_split", source.split]
+    for domain in source.domains:
+        args += ["--domain", domain]
     if config.dataset_path:
         args += ["--dataset_path", config.dataset_path]
     if config.dataset_revision:
@@ -712,6 +719,7 @@ def config_from_args(args: argparse.Namespace) -> PipelineConfig:
         dataset_split=args.dataset_split,
         dataset_revision=args.dataset_revision,
         dataset_name=args.dataset_name,
+        domains=tuple(args.domain or ()),
         inference=args.inference,
         compile=args.compile,
         eval=args.eval,

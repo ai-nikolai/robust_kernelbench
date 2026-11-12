@@ -63,6 +63,7 @@ class TaskSource:
     split: str | None = None
     revision: str | None = None
     schema: str = SCHEMA_VERSION
+    domains: tuple[str, ...] = ()
 
     def for_level(self, level: int) -> "TaskSource":
         """Use ``level_<n>`` when the caller did not name a split."""
@@ -94,6 +95,7 @@ class TaskSource:
             "dataset_split": self.split,
             "dataset_revision": self.revision,
             "dataset_schema": self.schema,
+            "dataset_domains": list(self.domains),
         }
         if dataset is not None:
             payload["dataset_fingerprint"] = fingerprint(dataset, self)
@@ -120,6 +122,13 @@ def add_dataset_args(parser: argparse.ArgumentParser, default_dataset: str = DEF
         default=None,
         help="Short dataset name used in metadata and the experiment signature.",
     )
+    parser.add_argument(
+        "--domain",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="Restrict tasks to a domain (repeatable), e.g. --domain physics.",
+    )
     return parser
 
 
@@ -141,6 +150,7 @@ def source_from_args(args: argparse.Namespace, level: int | None = None) -> Task
         path=path,
         split=getattr(args, "dataset_split", None),
         revision=getattr(args, "dataset_revision", None),
+        domains=tuple(getattr(args, "domain", None) or ()),
     )
     return source.for_level(level) if level is not None else source
 
@@ -326,6 +336,13 @@ def load_tasks(
     if limit is not None:
         dataset = dataset.select(range(min(limit, len(dataset))))
 
+    if source.domains:
+        if "domain" in dataset.column_names:
+            allowed = set(source.domains)
+            dataset = dataset.filter(lambda row: row["domain"] in allowed)
+        else:
+            logger.warning("domain filter requested but the dataset has no 'domain' column")
+
     if representative:
         if "filter" in dataset.column_names:
             dataset = dataset.filter(lambda row: bool(row["filter"]))
@@ -394,6 +411,23 @@ def _execute_task(row: dict[str, Any], device: str) -> None:
         raise TaskValidationError(f"task {row['problem_id']}: output contains non-finite values")
 
 
+def _dataset_summary(dataset: Dataset) -> dict[str, Any]:
+    levels: dict[str, int] = {}
+    domains: dict[str, int] = {}
+    for row in dataset:
+        if "level" in row:
+            key = str(row["level"])
+            levels[key] = levels.get(key, 0) + 1
+        if "domain" in row:
+            key = str(row["domain"])
+            domains[key] = domains.get(key, 0) + 1
+    return {
+        "rows": len(dataset),
+        "levels": dict(sorted(levels.items())),
+        "domains": dict(sorted(domains.items())),
+    }
+
+
 def _dataset_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Inspect and validate KernelBench task sources.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -405,6 +439,13 @@ def _dataset_cli() -> argparse.ArgumentParser:
     validate.add_argument(
         "--device", choices=["auto", "cpu", "cuda"], default="auto", help="Device for --execute."
     )
+
+    stats = subparsers.add_parser("stats", help="Print task counts by level and domain.")
+    add_dataset_args(stats)
+
+    listing = subparsers.add_parser("list", help="List tasks in a source.")
+    add_dataset_args(listing)
+    listing.add_argument("--json", action="store_true", help="Emit JSON instead of a table.")
     return parser
 
 
@@ -412,10 +453,36 @@ def cli(argv=None) -> None:
     args = _dataset_cli().parse_args(argv)
     source = source_from_args(args)
     try:
-        dataset = load_tasks(source, limit=args.limit)
+        dataset = load_tasks(source, limit=getattr(args, "limit", None))
     except Exception as e:  # noqa: BLE001 - CLI should report, not traceback
         print(json.dumps({"ok": False, "error": str(e)}, indent=2))
         sys.exit(1)
+
+    if args.command == "stats":
+        print(json.dumps({"ok": True, "dataset": source.metadata(dataset), **_dataset_summary(dataset)}, indent=2))
+        sys.exit(0)
+
+    if args.command == "list":
+        tasks_list = [
+            {
+                "problem_id": int(row["problem_id"]),
+                "name": row["name"],
+                "level": row.get("level"),
+                "domain": row.get("domain"),
+                "subdomain": row.get("subdomain"),
+            }
+            for row in dataset
+        ]
+        if args.json:
+            print(json.dumps(tasks_list, indent=2))
+        else:
+            print(f"{'id':>6}  {'level':>5}  {'domain':<12}  name")
+            for task in tasks_list:
+                print(
+                    f"{task['problem_id']:>6}  {str(task['level']):>5}  "
+                    f"{str(task['domain']):<12}  {task['name']}"
+                )
+        sys.exit(0)
 
     errors: list[str] = []
     if args.execute:

@@ -141,6 +141,40 @@ def test_bundled_science_dataset_has_all_levels():
     )
 
 
+def test_domain_filter(tmp_path):
+    _write_task(tmp_path, "physics_task", 1)
+    _write_task(tmp_path, "biology_task", 2)
+    manifest_path = tmp_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["tasks"][0]["domain"] = "physics"
+    manifest["tasks"][1]["domain"] = "biology"
+    manifest_path.write_text(json.dumps(manifest))
+
+    dataset = tasks.load_tasks(
+        tasks.TaskSource(
+            name="science",
+            format="directory",
+            path=str(tmp_path),
+            domains=("physics",),
+        )
+    )
+
+    assert [row["name"] for row in dataset] == ["physics_task"]
+
+
+def test_dataset_summary_counts_levels_and_domains():
+    root = Path(__file__).resolve().parents[1] / "data" / "science_kernels"
+    dataset = tasks.load_tasks(
+        tasks.TaskSource(name="science", format="directory", path=str(root))
+    )
+
+    summary = tasks._dataset_summary(dataset)
+
+    assert summary["rows"] == len(dataset)
+    assert summary["levels"]["1"] >= 8
+    assert summary["domains"]["physics"] >= 3
+
+
 def test_custom_dataset_reaches_stage_commands_and_experiment_name():
     config = PipelineConfig(
         dataset_path="./data/science_kernels",
@@ -164,3 +198,13 @@ def test_custom_dataset_reaches_stage_commands_and_experiment_name():
     assert config.dataset_source().name == tasks.DEFAULT_DATASET
     assert config.dataset_source().display_name == "science-kernels"
     assert config.resolved_experiment_name().startswith("exp_local_")
+
+
+def test_domain_filter_reaches_commands_and_signature():
+    config = PipelineConfig(domains=("physics", "chemistry"))
+
+    command = build_inference_command(config, JobSpec(1, 1, "kernelbench"), "exp")
+
+    domains = [command[index + 1] for index, item in enumerate(command) if item == "--domain"]
+    assert domains == ["physics", "chemistry"]
+    assert "chemistry_physics" in config.signature()
