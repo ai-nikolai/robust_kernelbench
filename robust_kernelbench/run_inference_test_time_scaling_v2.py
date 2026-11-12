@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 
-from robust_kernelbench.inference_common import (
+from robust_kernelbench.agent.inference_common import (
     build_arg_parser,
     run_main as _run_main,
 )

@@ -66,3 +66,35 @@ def test_global_denominator_is_the_row_count_not_100():
     assert out["correctness_global"] == 1.0
     assert out["compiled_global"] == 1.0
     assert out["coverage_global"] == 1.0
+
+
+def test_cuda_success_is_aggregated_when_present():
+    df = _frame(
+        [
+            dict(compiled=True, correctness=True, runtime_success=True, loading_success=True,
+                 correctness_success=True, timing_success=True, runtime=10.0, runtime_original=20.0),
+        ]
+    )
+    df["cuda_success"] = [False]
+
+    out = output_analysis(df)
+
+    assert out["cuda_success"] == 0.0
+    assert out["cuda_success_global"] == 0.0
+
+
+def test_statistical_aggregation_records_run_count(tmp_path):
+    from analysis.run_analysis_statistical import aggregate_across_files
+
+    path = tmp_path / "clean.csv"
+    pd.DataFrame(
+        [
+            {"model_name": "m", "prompt_type": "kernelbench", "correctness_global": 0.5},
+            {"model_name": "m", "prompt_type": "kernelbench", "correctness_global": 1.0},
+        ]
+    ).to_csv(path, index=False)
+
+    out = aggregate_across_files([str(path)])
+
+    assert out.loc[0, "n_runs"] == 2
+    assert out.loc[0, "correctness_global_mean"] == 0.75

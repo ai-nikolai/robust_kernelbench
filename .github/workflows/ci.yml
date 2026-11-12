@@ -56,6 +56,11 @@ jobs:
       - name: CLI entry points respond to --help
         run: |
           python -m robust_kernelbench.run_main --help > /dev/null
+          robust-kernelbench --help > /dev/null
+          robust-kernelbench-eval --help > /dev/null
+          robust-kernelbench-eval-single --help > /dev/null
+          robust-kernelbench-compile --help > /dev/null
+          robust-kernelbench-compile-sequential --help > /dev/null
           python -m robust_kernelbench.evaluate_single --help > /dev/null
           python -m robust_kernelbench.compile_all --help > /dev/null
           python -m robust_kernelbench.run_inference_test_time_scaling --help > /dev/null
@@ -68,6 +73,7 @@ jobs:
         # do both at module level, which made the module unimportable.
         run: |
           python -c "import analysis, analysis.utils, analysis.run_analysis_summary_clean, analysis.run_analysis_statistical, analysis.run_analysis_plotting"
+          python -c "import robust_kernelbench.agent.orchestrator, robust_kernelbench.agent.inference_common, robust_kernelbench.agent.prompt_common, robust_kernelbench.agent.prompts_v2"
 
       - name: Run the test suite
         # GPU-marked tests skip automatically on a CPU runner (see conftest.py).

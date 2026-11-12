@@ -16,7 +16,6 @@ python3 analysis/run_analysis_summary_clean.py  --experiment V8_3 --trial1 22 --
 import os
 import pandas as pd
 import json
-from pprint import pprint
 
 from tqdm import tqdm
 
@@ -60,14 +59,16 @@ def _safe_mean(series):
 def output_analysis(df):
     """Outputs analysis results"""
     out_dict = {}
-    df = df.astype({
-        "compiled":int, 
-        "correctness":int, 
-        "runtime_success" : int,
-        "loading_success" : int,
-        "correctness_success": int,
-        "timing_success": int,
-    })
+    bool_columns = [
+        "compiled",
+        "correctness",
+        "runtime_success",
+        "loading_success",
+        "correctness_success",
+        "timing_success",
+        "cuda_success",
+    ]
+    df = df.astype({column: int for column in bool_columns if column in df.columns})
     # Denominator for the "global" rates is the number of rows actually
     # evaluated, not an assumed 100: a level has 100 problems, but a trial can
     # legitimately end with fewer evaluation rows (88 for v10_1, 94 for v9_7),
@@ -84,6 +85,7 @@ def output_analysis(df):
     # so it cannot be mistaken for accuracy; `correctness` is the real metric.
     out_dict["check_ran"] = _safe_mean(df["correctness_success"])
     out_dict["timing_success"] = _safe_mean(df["timing_success"])
+    out_dict["cuda_success"] = _safe_mean(df["cuda_success"]) if "cuda_success" in df.columns else 0.0
 
     out_dict["correctness"] = _safe_mean(df["correctness"])
 
@@ -93,6 +95,9 @@ def output_analysis(df):
     out_dict["loading_success_global"] = df["loading_success"].sum()/ denom
     out_dict["check_ran_global"] = df["correctness_success"].sum()/ denom
     out_dict["timing_success_global"] = df["timing_success"].sum()/ denom
+    out_dict["cuda_success_global"] = (
+        df["cuda_success"].sum() / denom if "cuda_success" in df.columns else 0.0
+    )
     out_dict["correctness_global"] = df["correctness"].sum()/ denom
 
     df_compiled = df[df["compiled"] == 1]
@@ -330,6 +335,7 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
             "correctness_global",
             # `check_ran` only says check_correctness() executed.
             "check_ran_global",
+            "cuda_success_global",
             # "timing_success_global",
             # "runtime",
             # "runtime_original",
@@ -359,6 +365,7 @@ def compare_trials(base_experiment_name, trial1=1, trial2=2, base_experiments_fo
             "correctness_global",
             # `check_ran` only says check_correctness() executed.
             "check_ran_global",
+            "cuda_success_global",
             # "timing_success_global",
             # "runtime",
             # "runtime_original",

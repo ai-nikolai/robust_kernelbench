@@ -8,50 +8,25 @@
 #     --new_path experiments/exp_v3/trial_1/code/98__sample_0.py \
 #     --build_dir_new experiments/exp_v3/trial_1/kernel/98__sample__solution_kernel
 
-import os
-import json
-import io
-import sys
-
-from pathlib import Path
-
-import torch
-import torch.nn as nn
-import torch.utils.cpp_extension
-
-import numpy as np
-
 import gc
-
-from datasets import load_dataset
-
-from tqdm import tqdm
-
-import pandas as pd
-
-import shutil
-
-from datetime import datetime
-
+import os
+import sys
 import traceback
-import tempfile
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import multiprocessing as mp
-from multiprocessing import Pool, Lock
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
 
+from robust_kernelbench import artifacts
+from robust_kernelbench.cli_utils import positive_int
 from robust_kernelbench.logging_utils import get_logger, setup_logging
-from robust_kernelbench.utils.utils import (
-    get_folder_path,
-    get_file_name,
-    get_problem_id_from_file_name,
-    read_file,
-)
-
-from robust_kernelbench.utils.utils_data import (
-    CompileResult,
-    KernelExecResult
-)
+from robust_kernelbench.utils.utils import read_file
+from robust_kernelbench.utils.utils_data import KernelExecResult
 
 from robust_kernelbench.utils.utils_evaluate_common import (
     register_and_format_exception,
@@ -314,6 +289,102 @@ def memory_cleanup(curr_context: dict|Any=None, device: torch.device=None, custo
 
 
 
+CUDA_ERROR_MARKERS = (
+    "cuda error",
+    "cudaError",
+    "illegal memory access",
+    "device-side assert",
+    "misaligned address",
+    "out of memory",
+    "cublas",
+    "cudnn",
+)
+
+
+def is_cuda_error(exc: BaseException) -> bool:
+    """Whether ``exc`` came from the CUDA stack rather than the kernel's Python code.
+
+    PyTorch raises ``torch.AcceleratorError`` for some faults but plain
+    ``RuntimeError``/``OutOfMemoryError`` for others, so both the type and the
+    message are checked.
+    """
+    if isinstance(exc, torch.AcceleratorError):
+        return True
+    if isinstance(exc, getattr(torch.cuda, "OutOfMemoryError", ())):
+        return True
+    message = str(exc).lower()
+    return any(marker.lower() in message for marker in CUDA_ERROR_MARKERS)
+
+
+def _as_output_sequence(output: Any) -> list[Any]:
+    """Normalize a model output (tensor, tuple or list) for comparison."""
+    if isinstance(output, torch.Tensor):
+        return [output]
+    if isinstance(output, (tuple, list)):
+        return list(output)
+    return [output]
+
+
+def _compare_output_sequences(
+    expected: Any,
+    actual: Any,
+    atol: float | None,
+    rtol: float | None,
+    metadata: dict,
+) -> tuple[bool, str]:
+    """Compare two model outputs, returning ``(matched, message)``.
+
+    Handles the single-tensor case exactly as before and also tuple/list outputs
+    (common in KernelBench levels 2/3), which used to raise ``AttributeError`` on
+    ``output.shape`` and be misreported as a runtime error.
+    """
+    expected_items = _as_output_sequence(expected)
+    actual_items = _as_output_sequence(actual)
+
+    if len(expected_items) != len(actual_items):
+        return False, (
+            f"Output length mismatch: expected {len(expected_items)} value(s), "
+            f"got {len(actual_items)}"
+        )
+
+    for index, (expected_item, actual_item) in enumerate(zip(expected_items, actual_items)):
+        prefix = "" if len(expected_items) == 1 else f"[output {index}] "
+        if isinstance(expected_item, torch.Tensor) and isinstance(actual_item, torch.Tensor):
+            if expected_item.shape != actual_item.shape:
+                return False, (
+                    f"{prefix}Output shape mismatch: expected {expected_item.shape}, "
+                    f"got {actual_item.shape}"
+                )
+
+            trial_atol, trial_rtol = resolve_tolerances(expected_item.dtype, atol=atol, rtol=rtol)
+            metadata["atol"] = trial_atol
+            metadata["rtol"] = trial_rtol
+            metadata["tolerance_dtype"] = dtype_key(expected_item.dtype)
+
+            if not torch.allclose(expected_item, actual_item, atol=trial_atol, rtol=trial_rtol):
+                max_diff = torch.max(torch.abs(expected_item - actual_item)).item()
+                avg_diff = torch.mean(torch.abs(expected_item - actual_item)).item()
+                metadata.setdefault("max_difference", []).append(f"{max_diff:.6f}")
+                metadata.setdefault("avg_difference", []).append(f"{avg_diff:.6f}")
+                return False, (
+                    f"{prefix}Output mismatch: max difference is: {max_diff:.6f} "
+                    f"(atol={trial_atol}, rtol={trial_rtol}, dtype={dtype_key(expected_item.dtype)})"
+                )
+            continue
+
+        if isinstance(expected_item, torch.Tensor) or isinstance(actual_item, torch.Tensor):
+            return False, f"{prefix}Output type mismatch: expected {type(expected_item)}, got {type(actual_item)}"
+
+        try:
+            equal = bool(expected_item == actual_item)
+        except Exception:  # noqa: BLE001 - exotic output objects
+            equal = expected_item is actual_item
+        if not equal:
+            return False, f"{prefix}Output mismatch: expected {expected_item!r}, got {actual_item!r}"
+
+    return True, ""
+
+
 # TODO: edit this to include multiple new_model_instances...
 # Clean compile folder...
 def run_and_check_correctness(
@@ -336,6 +407,9 @@ def run_and_check_correctness(
     num_correct_trials: run the evalutation multiple times with (ideally) different random inputs to ensure correctness
     atol/rtol: explicit tolerances; when None they are chosen from the output dtype
     """
+    if num_correct_trials < 1:
+        raise ValueError("num_correct_trials must be >= 1")
+
     pass_count = 0
     exception_str = ""
     # Generate num_correct_trials seeds deterministically from the initial seed
@@ -372,66 +446,42 @@ def run_and_check_correctness(
             try:
                 output_new = model_new(*inputs)
                 torch.cuda.synchronize(device=device)
-                if output.shape != output_new.shape:
-                    exception_str = f"Output shape mismatch: Expected {output.shape}, got {output_new.shape}"
-                    metadata, exception_str = register_and_format_exception(
-                        "correctness_issue",
-                        exception_str,
-                        metadata,
-                    )
-                    if verbose:
-                        print(
-                            f"[FAIL] trial {trial}: Output shape mismatch: Expected {output.shape}, got {output_new.shape}"
-                        )
-                    kernel_exec_result = KernelExecResult(
-                        compiled=True, 
-                        correctness_success=True,
-                        correctness=False, 
-                        metadata=metadata, 
-                        main_error=format_exception_string(exception_str),
-                    )
-                    return kernel_exec_result
 
-                # check output value difference
-                # Tolerances come from the reference output dtype unless overridden.
-                trial_atol, trial_rtol = resolve_tolerances(output.dtype, atol=atol, rtol=rtol)
-                metadata["atol"] = trial_atol
-                metadata["rtol"] = trial_rtol
-                metadata["tolerance_dtype"] = dtype_key(output.dtype)
-                if not torch.allclose(
-                    output, output_new, atol=trial_atol, rtol=trial_rtol
-                ):  # fail
-                    max_diff = torch.max(torch.abs(output - output_new)).item()
-                    avg_diff = torch.mean(torch.abs(output - output_new)).item()
-                    metadata.setdefault("max_difference", []).append(f"{max_diff:.6f}")
-                    metadata.setdefault("avg_difference", []).append(f"{avg_diff:.6f}")
-                    exception_str = (
-                        f"Output mismatch: max difference is: {max_diff:.6f} "
-                        f"(atol={trial_atol}, rtol={trial_rtol}, dtype={dtype_key(output.dtype)})"
+                matched, comparison_message = _compare_output_sequences(
+                    output, output_new, atol=atol, rtol=rtol, metadata=metadata
+                )
+                if not matched:
+                    exception_str, metadata = register_and_format_exception(
+                        "correctness_issue", comparison_message, metadata
                     )
                     metadata["correctness_issue"] = "Output mismatch"
                     if verbose:
-                        print(f"[FAIL] trial {trial}: Output mismatch")
-                else:  # pass
-                    pass_count += 1
-                    if verbose:
-                        print(f"[PASS] trial {trial}: New Model matches Model")
+                        print(f"[FAIL] trial {trial}: {comparison_message}")
+                    return KernelExecResult(
+                        compiled=True,
+                        correctness_success=True,
+                        correctness=False,
+                        metadata=metadata,
+                        main_error=format_exception_string(exception_str),
+                    )
 
-            except Exception as e:
-                print("[Error] Exception happens during correctness check")
-                print(f"Error in launching kernel for ModelNew: {e}")
+                pass_count += 1
+                if verbose:
+                    print(f"[PASS] trial {trial}: New Model matches Model")
 
+            except Exception as e:  # noqa: BLE001 - kernel failures are measurements
+                logger.warning("correctness check failed: %s", e)
                 metadata, exception_str = register_and_format_exception(
                     "runtime_error", e, metadata, truncate=True
                 )
-                kernel_exec_result= KernelExecResult(
+                return KernelExecResult(
+                    cuda_success=not is_cuda_error(e),
                     compiled=True,
                     correctness_success=False,
-                    correctness=False, 
-                    metadata=metadata, 
+                    correctness=False,
+                    metadata=metadata,
                     main_error=format_exception_string(exception_str),
                 )
-                return kernel_exec_result
                 # break
 
     if verbose:
@@ -485,6 +535,11 @@ def eval_kernel_against_ref(
     num_perf_trials: run the evalutation many times to take the average
     device: GPU (cuda) device to run the evalutation on
     """
+    if num_correct_trials < 1:
+        raise ValueError("num_correct_trials must be >= 1")
+    if num_perf_trials < 1:
+        raise ValueError("num_perf_trials must be >= 1")
+
     # TODO: check device is busy
     assert torch.cuda.is_available(), "CUDA is not available, cannot run Eval"
     torch.set_printoptions(
@@ -704,12 +759,13 @@ def eval_kernel_against_ref(
         metadata["execution_traceback"] = tmp_traceback
 
         return KernelExecResult(
-            compiled=True, 
-            runtime_success=True, 
-            loading_success=False, 
+            cuda_success=not is_cuda_error(e),
+            compiled=True,
+            runtime_success=True,
+            loading_success=False,
             correctness_success=False,
             timing_success=False,
-            correctness=False, 
+            correctness=False,
             metadata=metadata,
             main_output=exec_std_output,
             main_traceback=tmp_traceback if tmp_traceback else "",
@@ -756,12 +812,13 @@ def eval_kernel_against_ref(
         memory_cleanup(context_new, device)
 
         return KernelExecResult(
-            compiled=True, 
-            runtime_success=True, 
-            loading_success=False, 
+            cuda_success=not is_cuda_error(e),
+            compiled=True,
+            runtime_success=True,
+            loading_success=False,
             correctness_success=False,
             timing_success=False,
-            correctness=False, 
+            correctness=False,
             metadata=metadata,
             main_output=exec_std_output,
             main_traceback=tmp_traceback if tmp_traceback else "",
@@ -951,10 +1008,8 @@ def eval_kernel_against_ref(
             kernel_exec_result.metadata["error_during_performance_of_original"] = e
             kernel_exec_result.metadata["execution_status"] = "error_timing_original"
 
-    if custom_timing_success:
-        if  kernel_exec_result.metadata.get("execution_status"):
-            if not kernel_exec_result.metadata.get("execution_status") == "error_timing_original":
-                kernel_exec_result.metadata["execution_status"] = "success"
+    if custom_timing_success and kernel_exec_result.metadata.get("execution_status") is None:
+        kernel_exec_result.metadata["execution_status"] = "success"
 
     memory_cleanup(context, device)
     memory_cleanup(context_new, device)
@@ -1002,7 +1057,7 @@ def evaluate_single(
     num_perf_trials = 3,
     verbose  = True,
     measure_performance = True,
-    device = torch.cuda.current_device() if torch.cuda.is_available() else None, # have to run on GPU
+    device = None,  # resolved to the current CUDA device inside the function
     # Admin:
     experiment_folder = None,
     level=1,
@@ -1022,21 +1077,16 @@ def evaluate_single(
     if build_dir_new:
         Path(build_dir_new).mkdir(parents=True, exist_ok=True)
 
+    if device is None:
+        device = torch.cuda.current_device() if torch.cuda.is_available() else None
+
     reference_src = read_file(original_path)
     custom_src = read_file(new_path)
     try:
-
-        print(f"\n---:\n[Eval Main Func] Running Actual Evaluation now for l:{level}, t: {trial}, p:{problem_id}, s:{sample_id}")
-        # print(f"[Eval Main Func] This is the cache location: {torch.utils.cpp_extension._get_build_directory(new_path, verbose=True)}")
-
+        logger.info(
+            "evaluating level=%s trial=%s pid=%s sid=%s", level, trial, problem_id, sample_id
+        )
         start = datetime.now()
-        # results = eval_wrapper(reference_src, custom_src, build_dir, build_dir_new)
-
-        # Why does it get stuck on this....?
-        # DEBUG
-        # exec(custom_src, {})
-
-        # Run on this device
         results = eval_wrapper(
             reference_src,
             custom_src,
@@ -1050,54 +1100,23 @@ def evaluate_single(
             flush_l2=flush_l2,
         )
 
-        # # Run in a separate process
-        # with Pool(processes=1) as pool:
-        #     results = pool.apply(eval_wrapper, args=(reference_src, custom_src, build_dir, build_dir_new, device,))
-        
-        end = datetime.now()
-        print(f"[Eval Main Func] Got Results. Took time: {end-start}")
-        
-        try:
-            output = results.__dict__
-            output["problem_id"] = problem_id
-            output["sample_id"] = sample_id
-            out_results= [output]       
+        logger.info("evaluation finished in %s", datetime.now() - start)
+        output = results.model_dump()
 
-        except Exception as e:
-            logger.error(
-                "could not serialise the result for trial=%s pid=%s sid=%s: %s", trial, problem_id, sample_id, e
-            )
-            logger.debug("traceback:\n%s", traceback.format_exc())
-            output = KernelExecResult().__dict__
-            output["problem_id"] = problem_id
-            output["sample_id"] = sample_id
-            out_results= [output]    
+    except (Exception, SystemExit) as e:  # noqa: BLE001 - generated code may call sys.exit
+        logger.exception("evaluation failed entirely for trial=%s pid=%s sid=%s", trial, problem_id, sample_id)
+        output = KernelExecResult().model_dump()
 
-    except Exception as e:
-        logger.error("evaluation failed entirely for trial=%s pid=%s sid=%s: %s", trial, problem_id, sample_id, e)
-        logger.debug("traceback:\n%s", traceback.format_exc())
-        output = KernelExecResult().__dict__
-        output["problem_id"] = problem_id
-        output["sample_id"] = sample_id
-        out_results= [output]  
+    output["problem_id"] = problem_id
+    output["sample_id"] = sample_id
 
     try:
-        folder_path = get_folder_path(experiment_folder, trial=trial)
-        eval_filename = os.path.join(folder_path,'evaluations.csv')
-
-        results_df = get_dataframe_results(out_results)
-
-        if os.path.exists(eval_filename):
-            logger.debug("appending results to %s", eval_filename)
-            results_df.to_csv(os.path.join(eval_filename), index=False, header=False, mode="a")
-
-        else:
-            logger.debug("writing new results file %s", eval_filename)
-            results_df.to_csv(os.path.join(eval_filename), index=False)
-
-    except Exception as e:
-        logger.error("could not write results to %s: %s", locals().get("eval_filename", "?"), e)
-        logger.debug("traceback:\n%s", traceback.format_exc())
+        eval_filename = artifacts.csv_path(experiment_folder, trial, artifacts.EVALUATIONS_CSV)
+        artifacts.append_rows(get_dataframe_results([output]), eval_filename)
+    except Exception:  # noqa: BLE001 - the caller records the missing row
+        logger.exception("could not write results to evaluations.csv")
+        return False
+    return True
 
 
 def get_args(argv=None):
@@ -1114,11 +1133,11 @@ def get_args(argv=None):
     parser.add_argument("--seed_num", type=int, default=42, help="Random seed")
     parser.add_argument(
         "--num_correct_trials",
-        type=int,
+        type=positive_int,
         default=5,
         help="Number of independently seeded correctness trials (all must pass).",
     )
-    parser.add_argument("--num_perf_trials", type=int, default=3, help="Number of performance trials")
+    parser.add_argument("--num_perf_trials", type=positive_int, default=3, help="Number of performance trials")
     parser.add_argument(
         "--atol",
         type=float,
@@ -1149,11 +1168,12 @@ def get_args(argv=None):
     args = parser.parse_args(argv)
     return args
 
-if __name__=="__main__":
+def cli() -> None:
+    """Console-script entry point (``robust-kernelbench-eval-single``)."""
     args = get_args()
     setup_logging(args.log_level, force=True)
-    print("[Eval Main] - Entered Evaluate single...")
-    evaluate_single(
+    logger.info("entered evaluate_single")
+    ok = evaluate_single(
         original_path=args.original_path,
         new_path=args.new_path,
         build_dir=args.build_dir,
@@ -1172,7 +1192,11 @@ if __name__=="__main__":
         rtol=args.rtol,
         flush_l2=args.flush_l2,
     )
-    print("[Eval Main] - Exiting...")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    cli()
   
 
 # Example Bash command:

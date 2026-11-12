@@ -1,10 +1,10 @@
-"""Tests for the prompt decision table in :mod:`robust_kernelbench.prompt_common`."""
+"""Tests for the prompt decision table in :mod:`robust_kernelbench.agent.prompt_common`."""
 
 from __future__ import annotations
 
 import pytest
 
-from robust_kernelbench.prompt_common import (
+from robust_kernelbench.agent.prompt_common import (
     PromptSpec,
     failure_stage,
     get_compile_error_info,

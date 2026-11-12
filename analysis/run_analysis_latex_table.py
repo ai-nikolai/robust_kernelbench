@@ -44,29 +44,41 @@ METRICS = [
     ("fast_2_global", "Fast2"),
 ]
 
-# Number of runs (used in Welch t‑test denominator)
-N_RUNS = 3
-
 # Significance threshold (one‑tailed p‑value)
 ALPHA = 0.05
+# Archived CSVs predate the `n_runs` column; keep their historical assumption.
+LEGACY_N_RUNS = 3
 
-# Method mapping: CSV method_name → LaTeX label
+# CSV prompt_type / method_name -> LaTeX label.  Current experiments use the
+# prompt_type column; the old method names are kept for archived CSVs.
 METHOD_MAP = {
+    "single_stage": "IR-v1",
+    "kernelbench": "IR-v2",
+    "multi_stage": "IB-v1",
+    "kb_multi_stage": "IB-v2",
     "iterative_refinement": "IR",
     "+inductive": "+IB",
+    "IR": "IR",
+    "+IB": "+IB",
 }
+METHOD_ORDER = ["IR", "IR-v1", "IR-v2", "+IB", "IB-v1", "IB-v2"]
+IB_LABELS = {"+IB", "IB-v1", "IB-v2"}
+IR_FOR_IB = {"+IB": "IR", "IB-v1": "IR-v1", "IB-v2": "IR-v2"}
 
 # =============================================================================
 # Helper functions
 # =============================================================================
 
-def welch_ttest(mean_ir, std_ir, mean_ib, std_ib, n=N_RUNS):
+def welch_ttest(mean_ir, std_ir, mean_ib, std_ib, n):
     """
     One‑tailed Welch's t‑test for H0: mu_IB <= mu_IR.
     Returns (t_stat, df, p_value).
     If both standard deviations are zero and means differ, returns (inf, nan, 0.0).
     If both are zero and means equal, returns (nan, nan, 0.5).
     """
+    if n is None or n < 2 or pd.isna(std_ir) or pd.isna(std_ib):
+        return (float("nan"), float("nan"), float("nan"))
+
     if std_ir == 0.0 and std_ib == 0.0:
         if mean_ib > mean_ir:
             return (float('inf'), float('nan'), 0.0)   # significant (no variance)
@@ -99,16 +111,12 @@ def welch_ttest(mean_ir, std_ir, mean_ib, std_ib, n=N_RUNS):
     return t_stat, df, p_value
 
 
-def check_significance(mean_ir, std_ir, mean_ib, std_ib):
-    """Return True if +IB significantly > IR at ALPHA level, else False or None if untestable."""
-    # OLD: If both stds are zero, we call it untestable (no variance)
-    # if std_ir == 0.0 and std_ib == 0.0:
-    #     return None
-    _, _, p = welch_ttest(mean_ir, std_ir, mean_ib, std_ib)
-    if p < ALPHA:
-        return True
-    else:
-        return False
+def check_significance(mean_ir, std_ir, mean_ib, std_ib, n):
+    """True if IB significantly > IR at ALPHA, False if not, None if untestable."""
+    _, _, p = welch_ttest(mean_ir, std_ir, mean_ib, std_ib, n)
+    if pd.isna(p):
+        return None
+    return bool(p < ALPHA)
 
 
 def determine_best_second_best(all_values):
@@ -145,57 +153,66 @@ def main(csv_path, output_path):
     # Read CSV
     df = pd.read_csv(csv_path)
 
-    # Prepare data structure: data[model_name][method_label][metric_key] = (mean, std)
+    # data[model_name][method_label][metric_key] = (mean, std)
     data = defaultdict(dict)
+    run_counts = {}
+    allowed_models = {model for model, _ in MODELS}
 
     for _, row in df.iterrows():
-        csv_model = row['model_name']
-        csv_method = row['method_name']
-        method_label = METHOD_MAP.get(csv_method)
-        if method_label is None:
+        csv_model = row["model_name"]
+        if csv_model not in allowed_models:
             continue
 
-        # only consider models in our list
-        if csv_model not in [m[0] for m in MODELS]:
+        # Current CSVs have prompt_type; archived ones may have method_name.
+        csv_method = row.get("method_name", row.get("prompt_type"))
+        if pd.isna(csv_method):
+            csv_method = row.get("prompt_type")
+        method_label = METHOD_MAP.get(csv_method, csv_method)
+        if method_label is None or pd.isna(method_label):
             continue
 
         metric_dict = {}
         for metric_key, _ in METRICS:
             mean_col = f"{metric_key}_mean"
             std_col = f"{metric_key}_std"
-            if mean_col in row and std_col in row:
+            if mean_col in row.index and std_col in row.index:
                 metric_dict[metric_key] = (row[mean_col], row[std_col])
         data[csv_model][method_label] = metric_dict
+        run_counts[(csv_model, method_label)] = row.get("n_runs", None)
 
-    # We'll build rows: each row is (display_model, method_label, metric_values)
     rows = []
-    model_order = [m[0] for m in MODELS]  # preserve order
+    model_order = [m[0] for m in MODELS]
     for csv_model in model_order:
         if csv_model not in data:
             continue
         display_model = dict(MODELS)[csv_model]
-        for method_label in ["IR", "+IB"]:  # ensure order IR first, then +IB
+        for method_label in METHOD_ORDER:
             if method_label in data[csv_model]:
                 rows.append((display_model, method_label, data[csv_model][method_label]))
 
-    # Compute significance for each row that is +IB relative to its IR counterpart
-    # We need to pair them.
-    significance_dict = {}  # (display_model, metric_key) -> bool/None
-    # Also keep (mean_ir, std_ir, mean_ib, std_ib) for potential footnote
-    model_pairs = {}
+    # Significance: compare each IB row with the matching IR row.
+    significance_dict = {}
     for csv_model, display_model in MODELS:
-        if csv_model in data and "IR" in data[csv_model] and "+IB" in data[csv_model]:
-            ir_metrics = data[csv_model]["IR"]
-            ib_metrics = data[csv_model]["+IB"]
+        if csv_model not in data:
+            continue
+        for method_label in METHOD_ORDER:
+            if method_label not in IB_LABELS or method_label not in data[csv_model]:
+                continue
+            ir_label = IR_FOR_IB.get(method_label)
+            if ir_label not in data[csv_model]:
+                continue
+            n_runs = run_counts.get((csv_model, method_label))
+            if n_runs is None or pd.isna(n_runs):
+                n_runs = LEGACY_N_RUNS
+            else:
+                n_runs = int(n_runs)
             for metric_key, _ in METRICS:
-                mean_ir, std_ir = ir_metrics.get(metric_key, (None, None))
-                mean_ib, std_ib = ib_metrics.get(metric_key, (None, None))
+                mean_ir, std_ir = data[csv_model][ir_label].get(metric_key, (None, None))
+                mean_ib, std_ib = data[csv_model][method_label].get(metric_key, (None, None))
                 if mean_ir is not None and mean_ib is not None:
-                    sig = check_significance(mean_ir, std_ir, mean_ib, std_ib)
-                    significance_dict[(display_model, metric_key)] = sig
-                    model_pairs[(display_model, metric_key)] = (mean_ir, std_ir, mean_ib, std_ib)
-                else:
-                    significance_dict[(display_model, metric_key)] = None
+                    significance_dict[(display_model, method_label, metric_key)] = check_significance(
+                        mean_ir, std_ir, mean_ib, std_ib, n_runs
+                    )
 
     # Determine best and second best for each metric across all (model, method) entries
     best_dict = {}   # metric_key -> set of keys (display_model, method_label)
@@ -227,9 +244,10 @@ def main(csv_path, output_path):
         "Main results table summarizing the scores. All experiments were conducted on the "
         "KernelBench GPU programming task with a fixed test set of size $N = 100$ problems from "
         "level~1. IR = Iterative Refinement; IB = Inductive Bias. "
-        "Reported values are mean $\\pm$ standard deviation over 3 runs. "
+        "Reported values are mean $\\pm$ standard deviation over the available runs "
+        "(the statistical CSV records $n$ per method). "
         "Green bold values indicate statistically significant improvement of +IB over IR "
-        "(Welch's $t$-test, one‑tailed, $p < 0.05$). "
+        "(Welch's $t$-test, one‑tailed, $p < 0.05$; $n < 2$ is marked untestable). "
         "\\textbf{Bold} = best overall, \\underline{underline} = second best (ties allowed). "
         "COMP = Compilation Success, RUN = Runtime Success, CORR = Correctness."
     )
@@ -257,16 +275,16 @@ def main(csv_path, output_path):
                 row_cells.append("--")
                 continue
 
-            # format number to 2 decimal places
-            mean_str = f"{mean_val:.2f}"
-            std_str = f"{std_val:.2f}"
+            # format number to 2 decimal places; a single run has no std
+            mean_str = "--" if pd.isna(mean_val) else f"{mean_val:.2f}"
+            std_str = "--" if pd.isna(std_val) else f"{std_val:.2f}"
 
             # Determine if this cell should be bold, underline, or significant green
             is_best = (display_model, method_label) in best_dict.get(metric_key, set())
             is_second = (display_model, method_label) in second_dict.get(metric_key, set())
             is_sig = False
-            if method_label == "+IB":
-                sig_result = significance_dict.get((display_model, metric_key))
+            if method_label in IB_LABELS:
+                sig_result = significance_dict.get((display_model, method_label, metric_key))
                 if sig_result is True:
                     is_sig = True
 

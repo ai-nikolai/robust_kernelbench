@@ -20,7 +20,7 @@ os.environ.setdefault("VLLM_ALLREDUCE_USE_SYMM_MEM", "0")
 os.environ.setdefault("VLLM_SHARED_MEM_BROADCAST_TIMEOUT", "300")  # 5 minutes
 os.environ.setdefault("VLLM_FLASHINFER_ALLREDUCE", "0")
 
-from robust_kernelbench.inference_common import (  # noqa: E402
+from robust_kernelbench.agent.inference_common import (  # noqa: E402
     build_arg_parser,
     run_main as _run_main,
 )

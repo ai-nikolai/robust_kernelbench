@@ -36,6 +36,24 @@ def test_construct_generation_dict_groups_by_problem(code_dir):
     assert len(grouped["7__sample_"]) == 2
 
 
+def test_construct_generation_dict_sorts_samples_numerically(tmp_path):
+    code = tmp_path / "code"
+    code.mkdir()
+    for sample_id in (0, 1, 2, 9, 10, 11):
+        (code / f"1__sample_{sample_id}.py").write_text("# kernel\n")
+
+    grouped = construct_generation_dict(str(code))
+
+    assert grouped["1__sample_"] == [
+        "1__sample_0.py",
+        "1__sample_1.py",
+        "1__sample_2.py",
+        "1__sample_9.py",
+        "1__sample_10.py",
+        "1__sample_11.py",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Job building
 # ---------------------------------------------------------------------------

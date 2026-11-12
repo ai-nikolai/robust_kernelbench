@@ -180,7 +180,7 @@ def run_compilation(device, custom_model_src, context, build_dir_new,):
         metadata["compilation_status"] = compilation_status
         # Interesting this can cause an error during compile (I guess because some code executes the model already...)
         # torch.cuda.synchronize(device=device)  # This is needed, as otherwise or something like that... as otherwise the process seems to be hanging...
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         print(
             f"[COMPILE - utils_compile.run_compilation] ERROR - Failed to compile custom CUDA kernel: Record as compilation or runtime failure."
         )

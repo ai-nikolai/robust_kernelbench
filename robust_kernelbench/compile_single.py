@@ -48,7 +48,7 @@ def main(argv=None) -> int:
     experiment_name = resolve_experiment_name(args)
     custom_model_src = read_file(args.code_path)
 
-    single_compile_job(
+    recorded = single_compile_job(
         device=None,
         custom_model_src=custom_model_src,
         build_dir_new=args.build_dir_new,
@@ -58,7 +58,14 @@ def main(argv=None) -> int:
         experiment_name=experiment_name,
         len_list_of_solutions=1,
     )
-    return 0
+    # A kernel that fails to compile is a recorded measurement (exit 0); only a
+    # lost row is an infrastructure failure.
+    return 0 if recorded else 1
+
+
+def cli() -> None:
+    """Console-script entry point (``robust-kernelbench-compile-single``)."""
+    sys.exit(main())
 
 
 if __name__ == "__main__":

@@ -56,5 +56,10 @@ def main(argv=None) -> int:
     return 0 if failures == 0 else 1
 
 
+def cli() -> None:
+    """Console-script entry point (``robust-kernelbench-compile-sequential``)."""
+    sys.exit(main())
+
+
 if __name__ == "__main__":
     sys.exit(main())

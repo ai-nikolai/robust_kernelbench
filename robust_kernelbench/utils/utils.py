@@ -9,7 +9,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-VERSION = "0.0.2"
+from robust_kernelbench import __version__
+
+VERSION = __version__
 
 
 def get_folder_path(experiment_name, trial=None, postfix=None, prefix="experiments"):
@@ -79,45 +81,47 @@ def write_code(fullpath, code_src):
 
 
 def find_ending_digit_and_string(name):
-    """Extracts the name when it is: name_9812"""
-    out_digit = []
-    out_name = ""
-    idx = 0
-    for idx, c in enumerate(name[::-1]):
-        if c in "0123456789":
-            out_digit.insert(0, c)
-        else:
-            break
-    out_name = name[:-idx]
+    """Split a trailing decimal suffix off ``name``.
 
-    return out_name, "".join(out_digit)
+    ``"9__sample_12"`` -> ``("9__sample_", "12")``.  A name without a trailing
+    digit returns ``(name, "")``; the previous implementation sliced the name
+    incorrectly in that case.
+    """
+    idx = len(name)
+    while idx > 0 and name[idx - 1].isdigit():
+        idx -= 1
+    return name[:idx], name[idx:]
 
 
 def construct_generation_dict(folder):
     """
-    This function assumes that inside 'folder' there will be files named according to
-    the KernelBench problem names, e.g. ``1_Square_matrix_multiplication_0.py``.
+    Group generated kernel files by problem.
 
-    It returns::
+    Assumes files named according to the KernelBench problem names, e.g.
+    ``1_Square_matrix_multiplication_0.py``, and returns::
 
-        {'1_Square_matrix_multiplication_': ['1_Square_matrix_multiplication_0.py', ...]}
+        {'1_Square_matrix_multiplication_': ['..._0.py', '..._1.py', ...]}
 
-    Note: this lived in ``evaluate_all`` and was imported by the compile drivers, which
-    created an import cycle (compile -> evaluate_all -> evaluate_single).  It is pure
-    filesystem logic, so it now lives here.
+    The per-problem list is sorted by the **numeric** sample suffix.  A plain
+    lexicographic sort puts ``_10.py`` before ``_2.py``, which silently shifts
+    every sample_id after the ninth sample.
     """
-    files = sorted(os.listdir(folder))
+    out_dict: dict[str, list[str]] = {}
 
-    out_dict = {}
+    for file in sorted(os.listdir(folder)):
+        if not file.endswith(".py"):
+            continue
+        file_basename = file[:-3]
+        file_basename_root, _file_digit = find_ending_digit_and_string(file_basename)
+        out_dict.setdefault(file_basename_root, []).append(file)
 
-    for file in files:
-        if file.endswith(".py"):
-            file_basename = file.split(".py")[0]
-            file_basename_root, file_digit = find_ending_digit_and_string(file_basename)
-
-            if out_dict.get(file_basename_root):
-                out_dict[file_basename_root].append(file)
-            else:
-                out_dict[file_basename_root] = [file]
-
+    for solutions in out_dict.values():
+        solutions.sort(key=_sample_sort_key)
     return out_dict
+
+
+def _sample_sort_key(filename: str) -> tuple[int, str]:
+    """Numeric sample suffix first, with the filename as a stable tie-breaker."""
+    stem = filename[:-3] if filename.endswith(".py") else filename
+    _, digits = find_ending_digit_and_string(stem)
+    return (int(digits) if digits else -1, filename)

@@ -32,6 +32,7 @@ from collections import namedtuple
 from datetime import datetime
 from pathlib import Path
 
+from robust_kernelbench import artifacts
 from robust_kernelbench.logging_utils import get_logger
 from robust_kernelbench.utils.utils import (
     construct_generation_dict,
@@ -43,7 +44,7 @@ from robust_kernelbench.utils.utils import (
 
 logger = get_logger(__name__)
 
-COMPILATIONS_CSV = "compilations.csv"
+COMPILATIONS_CSV = artifacts.COMPILATIONS_CSV
 
 # One unit of compilation work.  The first eight fields are exactly the positional
 # arguments of ``single_compile_job`` (so ``pool.starmap(single_compile_job, [j[:8] ...])``
@@ -98,28 +99,46 @@ def _ensure_inprocess_locks():
         global_counter = mp.Value("i", 0)
 
 
-def _record_result(experiment_name, trial, out_results, use_lock=True):
-    """Append one compile result row to ``<experiment>/trial_N/compilations.csv``."""
+def _record_result(experiment_name, trial, out_results, use_lock=True) -> bool:
+    """Append one compile result row to ``<experiment>/trial_N/compilations.csv``.
+
+    Returns ``False`` when the row could not be persisted; callers use that to
+    distinguish a *kernel* failure (recorded, exit 0) from an infrastructure
+    failure (not recorded, exit non-zero).
+    """
     from robust_kernelbench.evaluate_single import get_dataframe_results
 
-    folder_path = get_folder_path(experiment_name, trial=trial)
-    eval_filename = os.path.join(folder_path, COMPILATIONS_CSV)
+    eval_filename = artifacts.csv_path(experiment_name, trial, COMPILATIONS_CSV)
 
-    results_df = get_dataframe_results(out_results)
+    try:
+        results_df = get_dataframe_results(out_results)
+        lock = global_lock
+        if use_lock and lock is not None:
+            with lock:
+                artifacts.append_rows(results_df, eval_filename)
+        else:
+            artifacts.append_rows(results_df, eval_filename)
+    except Exception as e:  # noqa: BLE001 - persistence failure is reported to the caller
+        logger.error("could not append to %s: %s", eval_filename, e)
+        return False
+    return True
 
-    lock = global_lock
-    if use_lock and lock is not None:
-        with lock:
-            _append_or_write(results_df, eval_filename)
-    else:
-        _append_or_write(results_df, eval_filename)
 
+def record_compile_failure(job: CompileJob, reason: str) -> bool:
+    """Record a compile row for a kernel whose subprocess died without one.
 
-def _append_or_write(results_df, eval_filename):
-    if os.path.exists(eval_filename):
-        results_df.to_csv(eval_filename, index=False, header=False, mode="a")
-    else:
-        results_df.to_csv(eval_filename, index=False)
+    A timeout, SIGKILL or interpreter abort means the normal ``compile_single``
+    path never got to write its row.  Without this the problem simply disappears
+    from ``compilations.csv`` and the stage-completeness check cannot tell a
+    crashed kernel from a clean compile failure.
+    """
+    from robust_kernelbench.utils.utils_data import CompileResult
+
+    result = CompileResult(main_error=reason, main_traceback=reason[-4000:])
+    row = dict(result.__dict__)
+    row["problem_id"] = job.problem_id
+    row["sample_id"] = job.sample_id
+    return _record_result(job.experiment_name, job.trial, [row])
 
 
 def single_compile_job(
@@ -162,7 +181,7 @@ def single_compile_job(
         context = {}
         compile_results = run_compilation(device, custom_model_src, context, build_dir_new)
         output = dict(compile_results.__dict__)
-    except Exception as e:  # noqa: BLE001 - one failed kernel must not stop the batch
+    except (Exception, SystemExit) as e:  # noqa: BLE001 - one failed kernel must not stop the batch
         logger.warning(
             "compilation failed for trial=%s problem_id=%s sample_id=%s: %s",
             trial,
@@ -182,11 +201,9 @@ def single_compile_job(
     output["problem_id"] = problem_id
     output["sample_id"] = sample_id
 
-    try:
-        _record_result(experiment_name, trial, [output])
-    except Exception as e:  # noqa: BLE001 - persistence failure should be loud but contained
-        logger.error("could not write compilation result for pid=%s sid=%s: %s", problem_id, sample_id, e)
-        logger.debug("traceback:\n%s", traceback.format_exc())
+    recorded = _record_result(experiment_name, trial, [output])
+    if not recorded:
+        logger.error("could not write compilation result for pid=%s sid=%s", problem_id, sample_id)
 
     logger.info(
         "compiled problem_id=%s sample_id=%s in %s (model_new_available=%s)",
@@ -195,6 +212,7 @@ def single_compile_job(
         datetime.now() - start,
         output.get("model_new_available"),
     )
+    return recorded
 
 
 def build_compile_jobs(
@@ -265,8 +283,9 @@ def _compile_jobs_parallel(jobs, num_processes):
 
     with mp.Pool(processes=num_processes, initializer=job_init, initargs=(lock, counter)) as pool:
         logger.info("starting pool with %s processes for %s jobs", num_processes, len(jobs))
-        pool.starmap(single_compile_job, [tuple(job[:8]) for job in jobs])
+        results = pool.starmap(single_compile_job, [tuple(job[:8]) for job in jobs])
     logger.info("pool finished")
+    return sum(1 for recorded in results if not recorded)
 
 
 def build_single_compile_command(job):
@@ -318,8 +337,16 @@ def _kill_process_group(proc, grace=10):
 
 
 def _compile_jobs_sequential(jobs, timeout=600, verbose=False):
-    """Compile each job in its own subprocess, so a hard crash cannot kill the run."""
+    """Compile each job in its own subprocess, so a hard crash cannot kill the run.
+
+    Returns the number of kernels whose outcome could **not** be recorded.  A
+    kernel that genuinely fails to compile is still a successful measurement and
+    is recorded by ``compile_single``; only a lost row is an infrastructure
+    failure.
+    """
     failures = 0
+    recorded: set[artifacts.KernelKey] = set()
+
     for job in jobs:
         command = build_single_compile_command(job)
 
@@ -332,30 +359,45 @@ def _compile_jobs_sequential(jobs, timeout=600, verbose=False):
             try:
                 returncode = proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                failures += 1
                 _kill_process_group(proc)
-                logger.error(
-                    "compile subprocess timed out after %ss for pid=%s sid=%s (process group killed)",
-                    timeout, job.problem_id, job.sample_id,
-                )
+                reason = f"compile subprocess timed out after {timeout}s (process group killed)"
+                logger.error("%s for pid=%s sid=%s", reason, job.problem_id, job.sample_id)
+                key = (job.problem_id, job.sample_id)
+                recorded = artifacts.compilation_keys(job.experiment_name, job.trial)
+                if key not in recorded:
+                    if not record_compile_failure(job, reason):
+                        failures += 1
+                    recorded.add(key)
                 continue
             out_fh.seek(0)
             stdout = out_fh.read()
             err_fh.seek(0)
             stderr = err_fh.read()
 
-        if returncode != 0:
-            failures += 1
-            logger.error(
-                "compile subprocess failed (rc=%s) for pid=%s sid=%s\n--- stdout ---\n%s\n--- stderr ---\n%s",
-                returncode,
-                job.problem_id,
-                job.sample_id,
-                stdout,
-                stderr,
-            )
-        elif verbose:
-            logger.debug("compile subprocess output:\n%s", stdout)
+        key = (job.problem_id, job.sample_id)
+        if returncode == 0:
+            # compile_single returns 0 only after the row was written.
+            recorded.add(key)
+            if verbose:
+                logger.debug("compile subprocess output:\n%s", stdout)
+            continue
+
+        logger.error(
+            "compile subprocess failed (rc=%s) for pid=%s sid=%s\n--- stdout ---\n%s\n--- stderr ---\n%s",
+            returncode,
+            job.problem_id,
+            job.sample_id,
+            stdout,
+            stderr,
+        )
+        # The child may have recorded a compile failure before dying.  Only a
+        # missing row needs to be repaired here.
+        recorded = artifacts.compilation_keys(job.experiment_name, job.trial)
+        if key not in recorded:
+            reason = f"compile subprocess exited with rc={returncode}"
+            if not record_compile_failure(job, reason):
+                failures += 1
+            recorded.add(key)
 
     return failures
 
@@ -375,7 +417,8 @@ def compile_all(
     """Compile every generated kernel for one trial.
 
     ``mode`` is one of ``parallel``, ``sequential`` or ``single`` (see module docstring).
-    Returns the number of failures (0 for the pool modes, which record failures in the CSV).
+    Returns the number of kernels whose row could not be persisted.  A kernel that
+    fails to compile is a recorded measurement, not an infrastructure failure.
     """
     import torch
 
@@ -419,15 +462,12 @@ def compile_all(
 
     if mode == "parallel":
         num_processes = max(1, min(int(num_processes or 1), len(jobs)))
-        _compile_jobs_parallel(jobs, num_processes)
-        failures = 0
+        failures = _compile_jobs_parallel(jobs, num_processes)
     elif mode == "sequential":
         failures = _compile_jobs_sequential(jobs, timeout=timeout, verbose=verbose)
     elif mode == "single":
         _ensure_inprocess_locks()
-        for job in jobs:
-            single_compile_job(*tuple(job[:8]))
-        failures = 0
+        failures = sum(1 for job in jobs if not single_compile_job(*tuple(job[:8])))
 
     logger.info("finished compiling %s jobs in %s (failures=%s)", len(jobs), datetime.now() - start, failures)
     return failures
@@ -435,23 +475,11 @@ def compile_all(
 
 def get_compiled_pid_sid(experiment_name, trial):
     """Set of ``(problem_id, sample_id)`` pairs already present in compilations.csv."""
-    import pandas as pd
-
-    pid_sid_list = {}
     try:
-        folder_path = get_folder_path(experiment_name, trial=trial)
-        eval_filename = os.path.join(folder_path, COMPILATIONS_CSV)
-
-        if os.path.exists(eval_filename):
-            existing_compilations = pd.read_csv(eval_filename)
-            pid_sid_list = set(
-                existing_compilations[["problem_id", "sample_id"]].itertuples(index=False, name=None)
-            )
-
+        return artifacts.compilation_keys(experiment_name, trial)
     except Exception as e:  # noqa: BLE001 - resumability is best-effort
         logger.warning("reading existing compilations failed: %s", e)
-
-    return pid_sid_list
+        return set()
 
 
 def add_common_compile_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

@@ -1,9 +1,59 @@
 # Robust KernelBench
 
 This is generally a robust version inspired by KernelBench (https://github.com/ScalingIntelligence/KernelBench).
-This code fixes a lot of the runtime problems the original code had: (Like fixing the GPU errors that go unoticed and corrupt the final results, adding distributed compilation, and adding more detailed metrics.)
+This code fixes a lot of the runtime problems the original code had: (Like fixing the GPU errors that go unoticed and corrupt the final results, adding isolated single-node compilation, and adding more detailed metrics.)
 
 This repo is also for the paper: "FIL Hypothesis"... (Citation coming soon).
+
+---
+
+## Package layout (v0.2.0)
+
+`robust-kernelbench` is split into two layers so a PyPI install can contain just the
+evaluation harness:
+
+| Layer | Modules | Install |
+| --- | --- | --- |
+| **Evaluation core** | `artifacts`, `compile_*`, `evaluate_*`, `utils` | `pip install robust-kernelbench` |
+| **Agentic generation** | `robust_kernelbench.agent.*` (inference, prompts, multi-round orchestration) | `pip install "robust-kernelbench[agent]"` |
+| Local engines | optional `[vllm]` / `[sglang]` extras | `pip install "robust-kernelbench[agent,vllm]"` |
+| Analysis | `analysis/` (matplotlib/scipy/seaborn) | `pip install "robust-kernelbench[analysis]"` |
+
+The console scripts are:
+
+```bash
+robust-kernelbench                    # agentic generate -> compile -> evaluate
+robust-kernelbench-eval               # evaluate an existing trial
+robust-kernelbench-eval-single        # evaluate one kernel
+robust-kernelbench-compile            # parallel compilation
+robust-kernelbench-compile-sequential # crash-isolated compilation
+```
+
+The historical module paths (`robust_kernelbench.run_main`,
+`robust_kernelbench.inference_common`, `robust_kernelbench.prompt_common`,
+`robust_kernelbench.prompts_v2`, `robust_kernelbench.prompts_kb`) remain as thin
+compatibility shims.
+
+### Trust model
+
+The compiler and evaluator `exec()` LLM-generated kernels. The subprocess isolation in
+`evaluate_all` / `compile_all_sequential` protects against crashes, CUDA aborts and
+runaway memory, **but it is not a security sandbox**: generated code can still read and
+write files and open network connections. Run untrusted models inside a container or
+namespace with a read-only filesystem and no network if that matters to you.
+
+### Stage guarantees
+
+A job is no longer reported as successful merely because every stage exited 0:
+
+* inference must write at least one generation row **and** one kernel file;
+* every generated kernel must have a row in `compilations.csv`;
+* every successfully compiled kernel must have a row in `evaluations.csv`.
+
+A kernel that fails to compile, or produces wrong/slow output, is a valid measurement and
+is recorded as such. A *missing* row is an infrastructure failure and fails the job.
+Crashed compile/evaluation children are also recorded (with their logs retained) instead
+of disappearing from the CSV.
 
 ---
 
@@ -32,6 +82,30 @@ The pipeline is now an installable package with a real CLI, a test suite and CI:
 
 ### Installation
 
+Install just the evaluator (no serving stack):
+
+```bash
+pip install robust-kernelbench
+# optional: post-hoc analysis
+pip install "robust-kernelbench[analysis]"
+```
+
+Install the agentic loop with a remote OpenAI-compatible endpoint:
+
+```bash
+pip install "robust-kernelbench[agent]"
+```
+
+Install it with a local engine:
+
+```bash
+pip install "robust-kernelbench[agent,vllm]"
+# or
+pip install "robust-kernelbench[agent,sglang]"
+```
+
+For development from a checkout:
+
 ```bash
 # ENV for the model (sglang / vllm serving)
 conda create -n env_model python=3.11
@@ -42,13 +116,10 @@ pip3 install -r requirements_sglang.txt
 conda create -n env_kb2 python=3.11
 conda activate env_kb2
 pip3 install -r requirements.txt
-pip3 install -e .              # install the package itself (editable)
+pip3 install -e ".[agent,analysis,dev]"   # package + agentic loop + tooling
 # conda install cuda-nvcc_linux-64 -c conda-forge # in case you are on conda you need this.
 # Maybe needed?
 # conda install cuda-toolkit
-
-# OPTIONAL: analysis + dev tooling
-pip3 install -e ".[analysis,dev]"
 ```
 
 `pip install -e .` is what makes `python -m robust_kernelbench.<module>` work from any
@@ -124,6 +195,8 @@ python -m robust_kernelbench.evaluate_all \
 | --- | --- | --- |
 | `--serving_backend {sglang,vllm,none}` | `run_main` | which server's pause/resume endpoints to call between stages (`none` skips) |
 | `--tensor_parallel_size N` | `run_main`, inference | tensor-parallel size for the local engine |
+| `--num_samples N` | `run_main`, inference | completions per problem (all backends now honour it) |
+| `--seed N` | `run_main`, inference | sampling seed, recorded in `metadata.json` (`None` = engine default) |
 | `--num_correct_trials N` | `run_main`, `evaluate_all`, `evaluate_single` | independently seeded correctness trials; all must match (default 5) |
 | `--atol` / `--rtol` | `run_main`, `evaluate_all`, `evaluate_single` | explicit tolerances; default is chosen from the output dtype. `--atol 1e-2 --rtol 1e-2` reproduces the historical behaviour |
 | `--flush_l2` / `--no-flush_l2` | `run_main`, `evaluate_all`, `evaluate_single` | evict L2 before each timed trial (default: on) |

@@ -91,3 +91,10 @@ or `_global` (share of the evaluated rows), for example `correctness_global`.
   dividing by 100 silently under-reported every rate.
 * `coverage_global` is the share of rows actually evaluated; it used to be written into
   `compiled_global`, hiding the real compile rate.
+* `cuda_success_global` is the share of evaluated rows with no detected CUDA fault.
+* The statistical step records `n_runs` per model/prompt type. The LaTeX step uses it for
+  Welch's t-test and marks comparisons with fewer than two runs as untestable rather than
+  treating a NaN standard deviation as a significant result.
+* Plotting tolerates older statistical CSVs that predate `check_ran_global_mean` and
+  `cuda_success_global_mean`; the LaTeX step reads `prompt_type` when `method_name` is not
+  present.

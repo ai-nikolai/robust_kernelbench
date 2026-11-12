@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from robust_kernelbench import run_main
-from robust_kernelbench.run_main import (
+from robust_kernelbench.agent import orchestrator as run_main
+from robust_kernelbench.agent.orchestrator import (
     EXIT_FAILURE,
     EXIT_OK,
     EXIT_USAGE,

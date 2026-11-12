@@ -5,11 +5,10 @@ python3 analysis/run_analysis_statistical.py analysis_output/V8_3_comparison_cle
 
 """
 
-import pandas as pd
-import numpy as np
 import sys
-import os
 from pathlib import Path
+
+import pandas as pd
 
 def aggregate_across_files(file_paths, special_key2="prompt_type"):
     """
@@ -29,33 +28,30 @@ def aggregate_across_files(file_paths, special_key2="prompt_type"):
         df = df.set_index(['model_name', f'{special_key2}'])
         dataframes.append(df)
 
+    if not dataframes:
+        raise ValueError("no input files")
+
     # Combine all DataFrames by concatenating along rows (different observations)
     combined = pd.concat(dataframes, axis=0)
+    grouped = combined.groupby(level=["model_name", special_key2])
 
-    # Group by model_name and method_name, compute mean and std for each metric
-    mean_df = combined.groupby(level=['model_name', f'{special_key2}']).mean()
-    std_df = combined.groupby(level=['model_name', f'{special_key2}']).std()
+    # Numeric-only keeps string columns (e.g. prompt_type) from breaking the
+    # aggregation on newer pandas versions.
+    mean_df = grouped.mean(numeric_only=True).add_suffix("_mean")
+    std_df = grouped.std(numeric_only=True).add_suffix("_std")
+    counts = grouped.size().rename("n_runs")
 
-    # Rename columns to indicate mean or std
-    mean_df = mean_df.add_suffix('_mean')
-    std_df = std_df.add_suffix('_std')
+    result = pd.concat([mean_df, std_df, counts], axis=1)
 
-    # Concatenate mean and std DataFrames along columns
-    result = pd.concat([mean_df, std_df], axis=1)
-
-    # Reorder columns to interleave mean and std for each metric
-    base_metrics = [col.replace('_mean', '') for col in mean_df.columns]
-
+    # Reorder columns to interleave mean and std for each metric.
+    base_metrics = [col.replace("_mean", "") for col in mean_df.columns]
     ordered_columns = []
     for metric in base_metrics:
         ordered_columns.append(f"{metric}_mean")
         ordered_columns.append(f"{metric}_std")
+    ordered_columns.append("n_runs")
 
-    result = result[ordered_columns]
-
-    # Reset index to make model_name and method_name columns again
-    result = result.reset_index()
-
+    result = result[ordered_columns].reset_index()
     return result
 
 def parse_args(argv=None):
@@ -97,9 +93,9 @@ def main(argv=None):
     # Perform aggregation
     try:
         result = aggregate_across_files(input_files)
-        # Save to output CSV
-        result = result.round(2)
-        result.to_csv(output_file, index=False, sep=',')
+        # Keep full precision: the LaTeX step performs the significance tests and
+        # rounding here can move a p-value across the threshold.
+        result.to_csv(output_file, index=False, sep=",", float_format="%.6g")
         
         print(f"Aggregated results saved to {output_file}")
         print(f"Processed {len(input_files)} files for {len(result)} model-method combinations.")

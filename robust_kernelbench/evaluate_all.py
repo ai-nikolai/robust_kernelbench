@@ -1,56 +1,25 @@
-# Previously Working Version 05.11.2025 (without subprocess). Current version from 05.11.2025
+import multiprocessing as mp
 import os
-import json
-import io
-import sys
-
 import subprocess
-
+import sys
+from datetime import datetime
 from pathlib import Path
 
-import torch
-import torch.nn as nn
-import torch.utils.cpp_extension
-import numpy as np
-
-import gc
-
+import pandas as pd
 from datasets import load_dataset
-
-from pydantic import BaseModel
-
 from tqdm import tqdm
 
-import pandas as pd
-
-import shutil
-
-from datetime import datetime
-
-import multiprocessing as mp
-from multiprocessing import Pool,Lock
-
-import traceback
-
-from typing import Any
-
+from robust_kernelbench import artifacts
+from robust_kernelbench.cli_utils import non_negative_float, positive_int
+from robust_kernelbench.evaluate_single import get_dataframe_results
 from robust_kernelbench.logging_utils import get_logger, setup_logging
 from robust_kernelbench.utils.utils import (
     construct_generation_dict,
     find_ending_digit_and_string,
-    get_folder_path,
     get_file_name,
+    get_folder_path,
     get_problem_id_from_file_name,
     write_code,
-)
-
-from robust_kernelbench.evaluate_single import (
-    memory_cleanup, 
-    eval_kernel_against_ref,
-    get_dataframe_results,
-    read_file,
-    evaluate_single,
-    eval_wrapper
 )
 
 logger = get_logger(__name__)
@@ -190,47 +159,53 @@ def _kill_subprocess_group(proc, grace=10):
         logger.error("eval subprocess %s did not die after SIGKILL", proc.pid)
 
 
-def _ensure_trailing_newline(path):
-    """Make sure ``path`` ends with a newline before a row is appended.
+# Backwards-compatible alias for callers/tests that imported the helper here.
+_ensure_trailing_newline = artifacts.ensure_trailing_newline
 
-    A child killed mid-append can leave a truncated last line; appending another
-    row straight after it would merge the two and corrupt the CSV.  Best effort:
-    a failure here is logged and does not stop the run.
-    """
+
+def _compiled_successfully(experiment_name, trial, problem_id, sample_id) -> bool:
+    """Whether compilations.csv says this exact sample built."""
     try:
-        with open(path, "rb+") as handle:
-            handle.seek(0, os.SEEK_END)
-            if handle.tell() == 0:
-                return
-            handle.seek(-1, os.SEEK_END)
-            if handle.read(1) != b"\n":
-                handle.write(b"\n")
-    except OSError as e:
-        logger.warning("could not normalise the trailing newline of %s: %s", path, e)
+        return (problem_id, sample_id) in artifacts.compilation_keys(
+            experiment_name, trial, successful_only=True
+        )
+    except Exception:  # noqa: BLE001 - the failure row is more important than this flag
+        return False
 
 
-def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout, log_tail=""):
-    """Append a real evaluation row for a kernel that had to be killed.
+def write_failure_result(
+    experiment_name,
+    trial,
+    problem_id,
+    sample_id,
+    reason,
+    log_tail="",
+    compiled=None,
+):
+    """Append an evaluation row for a kernel whose child produced none.
 
-    Without this the problem simply vanished from evaluations.csv, so the
-    evaluated count no longer matched the compiled count.
-
-    The flags record only what was actually observed.  The compile stage did
-    succeed (the kernel is listed in compilations.csv), but the process was
-    killed before it could load the module, execute the kernel, or produce a
-    timing -- so every runtime/loading/correctness/cuda flag is False and
-    ``runtime`` is -1.0.  Claiming ``cuda_success=True`` here would have
-    inflated the CUDA and compile aggregates in the analysis.
+    Only observed state is recorded.  ``compiled`` is looked up in
+    compilations.csv when not supplied; the child was killed before it could
+    load, execute or time anything, so every runtime/correctness flag is False
+    and ``runtime`` is -1.0.
     """
-    from robust_kernelbench.utils.utils import get_folder_path
     from robust_kernelbench.utils.utils_data import KernelExecResult
 
-    # `get_dataframe_results` is imported at module level (from evaluate_single);
-    # re-importing it here shadows that name (ruff F811).
+    key = (problem_id, sample_id)
+    try:
+        already_recorded = key in artifacts.evaluation_keys(experiment_name, trial)
+    except Exception:  # noqa: BLE001 - a damaged CSV must not block the repair row
+        already_recorded = False
+    if already_recorded:
+        logger.warning("not recording a duplicate failure row for pid=%s sid=%s", problem_id, sample_id)
+        return
+
+    if compiled is None:
+        compiled = _compiled_successfully(experiment_name, trial, problem_id, sample_id)
 
     result = KernelExecResult(
         cuda_success=False,
-        compiled=True,
+        compiled=bool(compiled),
         runtime_success=False,
         loading_success=False,
         correctness_success=False,
@@ -240,7 +215,7 @@ def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout,
         runtime_stats={},
         runtime_original=-1.0,
         runtime_original_stats={},
-        main_error=f"eval subprocess timed out after {timeout}s (process group killed)",
+        main_error=reason,
         main_traceback=(log_tail or "")[-4000:],
     )
 
@@ -248,17 +223,32 @@ def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout,
     row["problem_id"] = problem_id
     row["sample_id"] = sample_id
 
-    folder_path = get_folder_path(experiment_name, trial=trial)
-    eval_filename = os.path.join(folder_path, "evaluations.csv")
-    results_df = get_dataframe_results([row])
-    if os.path.exists(eval_filename):
-        _ensure_trailing_newline(eval_filename)
-        results_df.to_csv(eval_filename, index=False, header=False, mode="a")
-    else:
-        results_df.to_csv(eval_filename, index=False)
-    logger.error(
-        "recorded timeout row for pid=%s sid=%s in %s", problem_id, sample_id, eval_filename
+    eval_filename = artifacts.csv_path(experiment_name, trial, artifacts.EVALUATIONS_CSV)
+    artifacts.append_rows(get_dataframe_results([row]), eval_filename)
+    logger.error("recorded failure row for pid=%s sid=%s: %s", problem_id, sample_id, reason)
+
+
+def write_timeout_result(experiment_name, trial, problem_id, sample_id, timeout, log_tail=""):
+    """Append an evaluation row for a kernel that had to be killed."""
+    return write_failure_result(
+        experiment_name,
+        trial,
+        problem_id,
+        sample_id,
+        reason=f"eval subprocess timed out after {timeout}s (process group killed)",
+        log_tail=log_tail,
+        compiled=True,
     )
+
+
+def _record_or_count_failure(writer, *args, **kwargs) -> int:
+    """Call a failure-row writer, returning 1 if the row could not be stored."""
+    try:
+        writer(*args, **kwargs)
+    except Exception:  # noqa: BLE001 - losing one row must not abort the batch
+        logger.exception("could not record an evaluation failure row")
+        return 1
+    return 0
 
 
 def eval_main_loop(
@@ -289,56 +279,43 @@ def eval_main_loop(
         os.environ.get("MAX_JOBS", "<unset>"),
         os.environ.get("OMP_NUM_THREADS", "<unset>"),
     )
-    captured_text = "No Capture."
-    device = torch.cuda.current_device() if torch.cuda.is_available() else None
-
-
-    # folder_path = get_folder_path(experiment_name, trial)
     folder_path_code = get_folder_path(experiment_name, trial, postfix="code")
     folder_path_kernel = get_folder_path(experiment_name, trial, postfix="kernel")
 
     dict_of_files_to_evaluate = construct_generation_dict(folder_path_code)
 
-    out_results = []
+    # One pass over the dataset instead of a full filter scan per problem.
+    samples_by_problem_id = {}
+    for sample in dataset:
+        samples_by_problem_id.setdefault(int(sample["problem_id"]), sample)
 
-    # Path("kernels").mkdir(parents=True, exist_ok=True)
-    # build_dir = os.path.join("kernels", f"ref_kernels_{CURRENT_DATETIME}")
+    record_failures = 0
 
-
-    for sample_file_name, list_of_solutions in (pbar := tqdm(dict_of_files_to_evaluate.items())):
+    for sample_file_name, list_of_solutions in tqdm(dict_of_files_to_evaluate.items()):
         problem_id = get_problem_id_from_file_name(sample_file_name)
-        print("\n======Start\n[Main] Main Loop start...")
-        if compiled_problem_ids:
-            if not problem_id in compiled_problem_ids:
-                print(f"Skipping problem_id {problem_id} as it's not in the compiled list.")
-                continue
-
-        print(f"[Main Evaluate] Currently evaluating problem_id: {problem_id} with {len(list_of_solutions)} solutions.")
-
-        file_name_reference = get_file_name(problem_id)
-        ref_kernel_folder_name = file_name_reference+"_ref_kernel"
-
-        build_dir = os.path.join(folder_path_kernel, ref_kernel_folder_name)
-        Path(build_dir).mkdir(parents=True, exist_ok=True)
-
-        tmp = dataset.filter(lambda x: x["problem_id"] == problem_id)
-        if tmp:
-            sample = tmp[0]
-        else:
-            print(f"Problem with problem_id {problem_id} is not in the dataset. Skipping.")
+        if compiled_problem_ids and problem_id not in compiled_problem_ids:
+            logger.debug("skipping problem_id %s (not in the compiled list)", problem_id)
             continue
 
-        reference_code_path = os.path.join(build_dir,f"{sample['name']}.py")
-        write_code(reference_code_path,sample["code"])
+        logger.info("evaluating problem_id=%s (%s solution(s))", problem_id, len(list_of_solutions))
 
+        build_dir = os.path.join(folder_path_kernel, get_file_name(problem_id) + "_ref_kernel")
+        Path(build_dir).mkdir(parents=True, exist_ok=True)
 
-        for sample_id, solution in (pbar2 := tqdm(enumerate(list_of_solutions))):
+        sample = samples_by_problem_id.get(problem_id)
+        if sample is None:
+            logger.warning("problem_id=%s is not in the dataset; skipping", problem_id)
+            continue
+
+        reference_code_path = os.path.join(build_dir, f"{sample['name']}.py")
+        write_code(reference_code_path, sample["code"])
+
+        for sample_id, solution in enumerate(list_of_solutions):
             if (problem_id, sample_id) in pid_sid_set:
-                print(f"[Main Evaluate] Skipping, pid_sid already evaluated: {(problem_id, sample_id)}")
+                logger.info("skipping already-evaluated pid=%s sid=%s", problem_id, sample_id)
                 continue
-            
-            # pbar2.set_description(f"-------\nProblemID: {problem_id} -- evaluating specific solution id: {sample_id+1} of {len(list_of_solutions)}")
-            print(f"-------\n[Main Evaluate] ProblemID: {problem_id} -- evaluating specific solution id: {sample_id+1} of {len(list_of_solutions)}")
+
+            logger.info("evaluating pid=%s sid=%s (%s/%s)", problem_id, sample_id, sample_id + 1, len(list_of_solutions))
             try:
                 file_name_solution = get_file_name(problem_id, sample_id)
                 solution_kernel_folder_name = file_name_solution+"_solution_kernel"
@@ -396,6 +373,7 @@ def eval_main_loop(
                 stdout_path = os.path.join(build_dir_new, "eval_stdout.log")
                 stderr_path = os.path.join(build_dir_new, "eval_stderr.log")
                 timed_out = False
+                returncode = None
                 proc = None
                 with open(stdout_path, "w") as out_fh, open(stderr_path, "w") as err_fh:
                     try:
@@ -406,7 +384,7 @@ def eval_main_loop(
                             start_new_session=True,
                             preexec_fn=_make_preexec_fn(eval_mem_gb),
                         )
-                        proc.wait(timeout=timeout)
+                        returncode = proc.wait(timeout=timeout)
                     except subprocess.TimeoutExpired:
                         timed_out = True
                         logger.error(
@@ -425,22 +403,25 @@ def eval_main_loop(
                         pass
 
                 if timed_out:
-                    # Keep the per-problem logs for post-mortem when a kernel hung.
-                    try:
-                        write_timeout_result(
-                            experiment_name, trial, problem_id, sample_id, timeout, log_tail=captured_text
-                        )
-                    except Exception:  # noqa: BLE001 - losing one row must not abort the batch
-                        logger.exception(
-                            "could not record the timeout row for pid=%s sid=%s; "
-                            "evaluations.csv will be missing this problem",
-                            problem_id,
-                            sample_id,
-                        )
+                    record_failures += _record_or_count_failure(
+                        write_timeout_result,
+                        experiment_name, trial, problem_id, sample_id, timeout,
+                        log_tail=captured_text,
+                    )
                     continue
 
-                # Keep the logs only for timeouts (post-mortem): otherwise two files
-                # per problem accumulate inside every kernel build directory.
+                if returncode != 0:
+                    record_failures += _record_or_count_failure(
+                        write_failure_result,
+                        experiment_name, trial, problem_id, sample_id,
+                        reason=f"evaluation subprocess exited with rc={returncode}",
+                        log_tail=captured_text,
+                    )
+                    # Keep logs for every failed child, not just timeouts.
+                    continue
+
+                # Exit 0 means evaluate_single wrote its row; drop the per-problem
+                # logs so they do not accumulate in every build directory.
                 for _path in (stdout_path, stderr_path):
                     try:
                         os.remove(_path)
@@ -455,117 +436,37 @@ def eval_main_loop(
                         "captured_text:\n----Start----\n\n%s\n\n----End----", captured_text
                     )
 
-                ##################################
-                # WITH Multi Processing
-                # reference_src = read_file(reference_code_path)
-                # custom_src = read_file(code_path)
+            except Exception as e:  # noqa: BLE001 - one kernel must not stop the batch
+                logger.exception("evaluation setup failed for pid=%s sid=%s", problem_id, sample_id)
+                record_failures += _record_or_count_failure(
+                    write_failure_result,
+                    experiment_name, trial, problem_id, sample_id,
+                    reason=f"evaluation setup failed: {e}",
+                )
 
-                # print(f"\n---:\n[Main Evaluate] Running Actual Evaluation now for l:{level}, t: {trial}, p:{problem_id}, s:{sample_id}")
-                # start = datetime.now()
-
-                # kwargs = {
-                #     "original_path":reference_code_path, 
-                #     "new_path":code_path, 
-                #     "build_dir":build_dir, 
-                #     "build_dir_new":build_dir_new, 
-                #     # other
-                #     "device":device, # have to run on GPU
-                #     # Admin:
-                #     "experiment_folder":experiment_name,
-                #     "level":level,
-                #     "trial":trial,
-                #     "problem_id":problem_id,
-                #     "sample_id":sample_id,
-                # }
-
-                # with Pool(processes=1) as pool:
-                #     print(f"Entering Pool {kwargs}")
-                #     result = pool.apply_async(evaluate_single, kwds=kwargs)
-                #     result.get(timeout=600)  # 10 minutes timeout
-        
-                # end = datetime.now()
-                # print(f"[Main Evaluate] Got Results. Took time: {end-start}") 
-                
-                # NOTE: OLD CODE
-                # custom_src = read_file(code_path)
-                
-                # print("\n---:\n[Main] Running Actual Evaluation now:")
-                # results = eval_kernel_against_ref(
-                #     original_model_src = sample["code"],
-                #     custom_model_src = custom_src,
-                #     seed_num = 42,
-                #     num_correct_trials = 3,
-                #     num_perf_trials = 3,
-                #     verbose  = True,
-                #     measure_performance = True,
-                #     build_dir = build_dir,
-                #     build_dir_new = build_dir_new,
-                #     device = torch.cuda.current_device() if torch.cuda.is_available() else None, # have to run on GPU
-                # )
-
-                # memory_cleanup(custom_string=f"Final Clean-up: problem_id: {problem_id}, sample_id: {sample_id}", verbose=True)
-                # Cleaning-up Evaluation
-                # if clean_build_dir:
-                #     pass
-                #     Skipping this for now...
-                #     shutil.rmtree(build_dir_new)
-                
-                # END OF CLEAN_UP
-                # END OF OLD CODE 
-
-
-            except Exception as e:
-                print(f"[Main] THIS EVAL for problem_id:{problem_id} and sample_id:{sample_id} FULLY FAILED")
-                print(captured_text)
-                print("----")
-                print(e)
-                # memory_cleanup(custom_string=f"Final Clean-up:(fail) problem_id: {problem_id}, sample_id: {sample_id}", verbose=True)
-
-    print("Done overall with eval loop.")
-    return out_results
+    logger.info("done with eval loop")
+    return record_failures
 
 
 
 def get_successful_compilation(experiment_name, trial):
-    # Load compilations.csv and filter for successful compilations
-    compilations_csv_path = os.path.join(get_folder_path(experiment_name, trial=trial), 'compilations.csv')
-    successful_problem_sample_pairs = None
-
-    if os.path.exists(compilations_csv_path):
-        compilations_df = pd.read_csv(compilations_csv_path)
-
-        # Filter for rows where model_new_available is True
-        successful_compilations = compilations_df[compilations_df['model_new_available'] == True]
-
-        # Extract unique problem_ids and sample_ids
-        successful_problem_sample_pairs = list(zip(successful_compilations['problem_id'], successful_compilations['sample_id']))
-
-        print(f"[Main] Found {len(successful_problem_sample_pairs)} successful compilations with model_new_available=True")
-    else:
-        print(f"[Main] Warning: compilations.csv not found at {compilations_csv_path}. Proceeding with full dataset.")   
-
-    return successful_problem_sample_pairs
+    """``(problem_id, sample_id)`` pairs that built a usable ``ModelNew``."""
+    path = artifacts.csv_path(experiment_name, trial, artifacts.COMPILATIONS_CSV)
+    if not os.path.exists(path):
+        logger.warning("compilations.csv not found at %s; no kernels to evaluate", path)
+        return []
+    pairs = sorted(artifacts.compilation_keys(experiment_name, trial, successful_only=True))
+    logger.info("%s successful compilation(s) with model_new_available=True", len(pairs))
+    return pairs
 
 
 def get_evaluation_pid_sid(experiment_name, trial):
-    pid_sid_list = {}
+    """``(problem_id, sample_id)`` pairs already present in evaluations.csv."""
     try:
-        folder_path = get_folder_path(experiment_name, trial=trial)
-        eval_filename = os.path.join(folder_path,'evaluations.csv')
-
-        if os.path.exists(eval_filename):
-            existing_compilations = pd.read_csv(eval_filename)
-            pid_sid_list = set(
-                [
-                    x for x in \
-                    existing_compilations[["problem_id", "sample_id"]].itertuples(index=False, name=None)
-                ]
-            )
-    
-    except Exception as e:
-        print(f"[get_evaluations pid_sid] failed::{e}")
-    
-    return pid_sid_list
+        return artifacts.evaluation_keys(experiment_name, trial)
+    except Exception as e:  # noqa: BLE001 - resumability is best-effort
+        logger.warning("reading existing evaluations failed: %s", e)
+        return set()
 
 def get_args(argv=None):
     import argparse
@@ -579,11 +480,13 @@ def get_args(argv=None):
     # Correctness / timing policy (forwarded to every evaluate_single subprocess)
     parser.add_argument(
         "--num_correct_trials",
-        type=int,
+        type=positive_int,
         default=5,
         help="Correctness trials per kernel; all must match the reference.",
     )
-    parser.add_argument("--num_perf_trials", type=int, default=3, help="Performance trials per kernel.")
+    parser.add_argument(
+        "--num_perf_trials", type=positive_int, default=3, help="Performance trials per kernel."
+    )
     parser.add_argument(
         "--atol",
         type=float,
@@ -602,10 +505,10 @@ def get_args(argv=None):
         default=True,
         help="Evict L2 before each timed trial (default: on).",
     )
-    parser.add_argument("--timeout", type=int, default=600, help="Per-kernel eval timeout (s).")
+    parser.add_argument("--timeout", type=positive_int, default=600, help="Per-kernel eval timeout (s).")
     parser.add_argument(
         "--eval_mem_gb",
-        type=float,
+        type=non_negative_float,
         default=24.0,
         help="Address-space cap for one eval child in GB (0 disables the cap).",
     )
@@ -617,6 +520,25 @@ def get_args(argv=None):
             args.experiment_name = args.experiment
     return args
 
+def _ensure_evaluations_csv(experiment_name: str, trial: int) -> None:
+    """Create an empty evaluations.csv when a trial has compilations but no eval rows.
+
+    Analysis and multi-round prompting both expect the file to exist.
+    """
+    compilations_csv = artifacts.csv_path(experiment_name, trial, artifacts.COMPILATIONS_CSV)
+    evaluations_csv = artifacts.csv_path(experiment_name, trial, artifacts.EVALUATIONS_CSV)
+    if not os.path.exists(compilations_csv) or os.path.exists(evaluations_csv):
+        return
+    try:
+        from robust_kernelbench.utils.utils_data import KernelExecResult
+
+        columns = list(KernelExecResult().model_dump().keys()) + ["problem_id", "sample_id"]
+        pd.DataFrame(columns=columns).to_csv(evaluations_csv, index=False)
+        logger.warning("created empty evaluations.csv at %s", evaluations_csv)
+    except Exception as e:  # noqa: BLE001 - analysis can still report a missing file
+        logger.error("could not create %s: %s", evaluations_csv, e)
+
+
 def main(argv=None) -> int:
     args = get_args(argv)
     setup_logging(args.log_level, force=True)
@@ -627,16 +549,17 @@ def main(argv=None) -> int:
 
     experiment_name = args.experiment_name
 
-    successful_problem_sample_pairs = get_successful_compilation(experiment_name, args.trial)
-    # Filter dataset to only include successful compilations
-    if successful_problem_sample_pairs and len(successful_problem_sample_pairs) > 0:
-        successful_problem_ids = set([pid for pid, _ in successful_problem_sample_pairs])
+    successful_pairs = get_successful_compilation(experiment_name, args.trial)
+    record_failures = 0
+
+    if successful_pairs:
+        successful_problem_ids = {pid for pid, _ in successful_pairs}
         actual_ds = actual_ds.filter(lambda x: x["problem_id"] in successful_problem_ids)
         logger.info("filtered dataset to %s problems with successful compilations", len(actual_ds))
 
-        pid_sid_set = get_evaluation_pid_sid(experiment_name,args.trial)
+        pid_sid_set = get_evaluation_pid_sid(experiment_name, args.trial)
         logger.info("found %s existing evaluations", len(pid_sid_set))
-        eval_main_loop(
+        record_failures = eval_main_loop(
             actual_ds,
             experiment_name=experiment_name,
             trial=args.trial,
@@ -655,45 +578,18 @@ def main(argv=None) -> int:
     else:
         logger.warning("no successful compilations found for %s trial_%s", experiment_name, args.trial)
 
+    _ensure_evaluations_csv(experiment_name, args.trial)
 
-    try:
-        # Ensure compilations.csv and evaluations.csv exist if not present
-        output_dir = get_folder_path(experiment_name, args.trial)
-        # Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-        compilations_csv = os.path.join(output_dir, 'compilations.csv')
-        if os.path.exists(compilations_csv):
-            evaluations_csv = os.path.join(output_dir, 'evaluations.csv')
-            if not os.path.exists(evaluations_csv):
-                print("[Main] WARNING: GENERATING EMPTY evaluations.csv, since compilations.csv exists, but no evaluations.csv.")
-                empty_evaluations_df = pd.DataFrame(columns=[
-                    'problem_id', 
-                    'sample_id', 
-                    'cuda_success', 
-                    'compiled', 
-                    'runtime_success', 
-                    'loading_success', 
-                    'correctness_success', 
-                    'timing_success', 
-                    'correctness', 
-                    'metadata', 
-                    'runtime', 
-                    'runtime_stats', 
-                    'runtime_original', 
-                    'runtime_original_stats', 
-                    'main_output', 
-                    'main_error', 
-                    'main_traceback'
-                ])
-                empty_evaluations_df.to_csv(evaluations_csv, index=False)
-                logger.warning("created empty evaluations.csv at %s", evaluations_csv)
-            else:
-                logger.info("compilations.csv and evaluations.csv files exist. All seems ok.")
-    except Exception as e:
-        logger.error("filling in blanks for evaluations.csv did not work: %s", e)
-
+    if record_failures:
+        logger.error("%s evaluation result row(s) could not be recorded", record_failures)
+        return 1
     logger.info("exiting")
     return 0
+
+
+def cli() -> None:
+    """Console-script entry point (``robust-kernelbench-eval``)."""
+    sys.exit(main())
 
 
 if __name__ == "__main__":
