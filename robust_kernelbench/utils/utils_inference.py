@@ -1,15 +1,16 @@
+import ast
 import os
+from collections import defaultdict
+
 import pandas as pd
 
-from datasets import load_from_disk, load_dataset
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 
-from pprint import pprint
+from robust_kernelbench.logging_utils import get_logger
 
-from .utils import (
-    get_folder_path,
-    get_file_name
-)
+from .utils import get_folder_path
+
+logger = get_logger(__name__)
 
 
 def extract_code(generated_response, model_name=None):
@@ -145,145 +146,114 @@ def extract_code(generated_response, model_name=None):
             return ""
 
 
+def _parse_generations(value):
+    """Decode the list stored in a generations.csv cell without ``eval``."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            return [value]
+        if isinstance(parsed, list):
+            return parsed
+        return [parsed]
+    return [value]
+
+
+def _compilation_updates(row) -> dict:
+    def text(key):
+        value = row.get(key, "")
+        return "" if isinstance(value, float) else value
+
+    return {
+        "model_new_available": row.get("model_new_available", False),
+        "compilation_output": text("main_output"),
+        "compilation_output_runtime": text("main_output_runtime"),
+        "compilation_output_error": text("main_error"),
+        "main_output": text("main_traceback"),
+    }
+
+
+def _evaluation_updates(row) -> dict:
+    def text(key):
+        value = row.get(key, "")
+        return "" if isinstance(value, float) else value
+
+    return {
+        "second_compile_success": row.get("compiled", False),
+        "correctness_success": row.get("correctness_success", False),
+        "correctness": row.get("correctness", False),
+        "runtime": row.get("runtime"),
+        "runtime_original": row.get("runtime_original"),
+        "correctness_output": text("main_output"),
+        "correctness_output_traceback": text("main_traceback"),
+        "correctness_output_error": text("main_error"),
+        "main_output": text("main_error"),
+    }
+
+
 def create_joined_dataset(
-    dataset,    
-    previous_generations = None,
-    previous_compilations = None,
-    previous_evaluations = None,
-    ):
-    """Creates a new joined dataset with sample_id as a separate key..."""
+    dataset,
+    previous_generations=None,
+    previous_compilations=None,
+    previous_evaluations=None,
+):
+    """Attach the previous round's artefacts to every dataset row.
+
+    The result has the same columns and sample expansion as before: each
+    ``(problem_id, sample_id)`` present in the previous round becomes its own
+    row, and problems without previous data keep ``sample_id = 0``.  The
+    implementation is a single pass over the inputs instead of repeatedly
+    scanning all keys for every dataset example.
+    """
     if previous_generations is None and previous_compilations is None and previous_evaluations is None:
-        # First trial - just return the original dataset
         return dataset
 
-    print("[utils inference - Join dataset] Start")
-    print(f"[utils inference - Join dataset] Gen: {len(previous_generations)} Comp: {len(previous_compilations)} Eval: {len(previous_evaluations)}")
+    logger.info(
+        "joining previous round: generations=%s compilations=%s evaluations=%s",
+        len(previous_generations) if previous_generations is not None else "none",
+        len(previous_compilations) if previous_compilations is not None else "none",
+        len(previous_evaluations) if previous_evaluations is not None else "none",
+    )
 
-    # Create a mapping from (problem_id, sample_id) to additional data
-    problem_data = {}
-    # print("1")
-    # Add generation data if available
+    previous: dict[tuple[int, int], dict] = {}
+    sample_ids: dict[int, set[int]] = defaultdict(set)
+
+    def ensure(problem_id, sample_id):
+        key = (int(problem_id), int(sample_id))
+        previous.setdefault(key, {})
+        sample_ids[key[0]].add(key[1])
+        return key
+
     if previous_generations is not None:
         for _, row in previous_generations.iterrows():
-            problem_id = row['problem_id']
-            generations = eval(row['generations']) if isinstance(row['generations'], str) else row['generations']
-            # print(generations)
-            # print(type(generations))
-            # assert type(generations)==list
-            # print(len(generations))
-            for sample_id, generation in enumerate(generations):
-                key = (problem_id, sample_id)
-                if key not in problem_data:
-                    problem_data[key] = {}
-                problem_data[key]['generation'] = generation
-    # print("2")
+            problem_id = int(row["problem_id"])
+            for sample_id, generation in enumerate(_parse_generations(row["generations"])):
+                key = ensure(problem_id, sample_id)
+                previous[key]["generation"] = generation
 
-    # Add compilation data if available
     if previous_compilations is not None:
         for _, row in previous_compilations.iterrows():
-            problem_id = row['problem_id']
-            sample_id = row['sample_id']
-            key = (problem_id, sample_id)
-            if key not in problem_data:
-                problem_data[key] = {}
-            problem_data[key]['model_new_available'] = row.get('model_new_available',False)
-            
-            problem_data[key]['compilation_output'] = row.get('main_output',"")
-            if type(problem_data[key]['compilation_output']) == float:
-                problem_data[key]['compilation_output'] = ""
+            key = ensure(row["problem_id"], row["sample_id"])
+            previous[key].update(_compilation_updates(row))
 
-            problem_data[key]['compilation_output_runtime'] = row.get('main_output_runtime',"")
-            if type(problem_data[key]['compilation_output_runtime']) == float:
-                problem_data[key]['compilation_output_runtime'] = ""
-            
-            problem_data[key]['compilation_output_error'] = row.get('main_error', "")
-            if type(problem_data[key]['compilation_output_error']) == float:
-                problem_data[key]['compilation_output_error'] = ""
-
-            problem_data[key]['main_output'] = row.get('main_traceback', "")
-            if type(problem_data[key]['main_output']) == float:
-                problem_data[key]['main_output'] = ""
-
-            # extra analysis
-            # if not row['model_new_available']:
-            #     from pprint import pprint
-            #     pprint(row)
-            #     input()
-    # print("3")
-
-    # Add evaluation data if available
     if previous_evaluations is not None:
         for _, row in previous_evaluations.iterrows():
-            problem_id = row['problem_id']
-            sample_id = row['sample_id']
-            key = (problem_id, sample_id)
-            if key not in problem_data:
-                problem_data[key] = {}
-            problem_data[key]['second_compile_success'] = row.get('compiled', False)
-            problem_data[key]['correctness_success'] = row.get('correctness_success', False)
-            problem_data[key]['correctness'] = row.get('correctness', False)
+            key = ensure(row["problem_id"], row["sample_id"])
+            previous[key].update(_evaluation_updates(row))
 
-            problem_data[key]['runtime'] = row['runtime']
-            problem_data[key]['runtime_original'] = row['runtime_original']
-
-
-            problem_data[key]['correctness_output'] = row.get('main_output',"")
-            if type(problem_data[key]['correctness_output']) == float:
-                problem_data[key]['correctness_output'] = ""
-
-            problem_data[key]['correctness_output_traceback'] = row.get('main_traceback',"")
-            if type(problem_data[key]['correctness_output_traceback']) == float:
-                problem_data[key]['correctness_output_traceback'] = ""
-            
-            problem_data[key]['correctness_output_error'] = row.get('main_error', "")
-            if type(problem_data[key]['correctness_output_error']) == float:
-                problem_data[key]['correctness_output_error'] = ""
-
-            problem_data[key]['main_output'] = row.get('main_error', "")
-            if type(problem_data[key]['main_output']) == float:
-                problem_data[key]['main_output'] = ""
-            
-            # Extra analysis
-            # if not row['correctness_success']:
-            #     from pprint import pprint
-            #     pprint(row)
-            #     input()
-    # print("4")
-
-    # Create expanded dataset with sample_id
-    expanded_examples = []
+    expanded = []
     for example in dataset:
-        problem_id = example['problem_id']
-        # Determine how many samples we have for this problem
-        matching_keys = [key for key in problem_data.keys() if key[0] == problem_id]
-        if matching_keys:
-            sample_ids = sorted(set(key[1] for key in matching_keys))
-            for sample_id in sample_ids:
-                new_example = example.copy()
-                new_example['sample_id'] = sample_id
-                key = (problem_id, sample_id)
-                if key in problem_data:
-                    new_example.update(problem_data[key])
-                expanded_examples.append(new_example)
-        else:
-            # No previous data for this problem, keep original example with sample_id = 0
-            new_example = example.copy()
-            new_example['sample_id'] = 0
-            expanded_examples.append(new_example)
-    # print("5")
-    # DEBUGGING CODE.
-    # for idx,example in enumerate(expanded_examples):
-    #     print(f"=============\nIDX:{idx}")
-    #     tmp = example.get("compilation_output") #compilation_output, main_output, compilation_output_runtime
-    #     print(type(tmp))
-    #     pprint(example)
-        # input()
-    # pprint(expanded_examples[50])
+        problem_id = int(example["problem_id"])
+        for sample_id in sorted(sample_ids.get(problem_id, {0})):
+            joined = example.copy()
+            joined["sample_id"] = sample_id
+            joined.update(previous.get((problem_id, sample_id), {}))
+            expanded.append(joined)
 
-    # Convert list of dicts to HuggingFace dataset
-    joined_dataset = Dataset.from_list(expanded_examples)
-    print("[utils inference - Join dataset] Finished and successful.")
-    return joined_dataset
+    logger.info("joined dataset has %s rows", len(expanded))
+    return Dataset.from_list(expanded)
 
 
 if __name__ == "__main__":

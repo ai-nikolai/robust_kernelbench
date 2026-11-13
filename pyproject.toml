@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robust-kernelbench"
+version = "0.2.0"
+description = "A robust KernelBench harness: isolated compilation, strict correctness/timing evaluation, and an optional agentic generation loop for GPU kernels."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Nikolai Rozanov" }]
+keywords = ["kernelbench", "cuda", "triton", "llm", "gpu", "benchmark"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# NOTE: deliberately unpinned at the top level. The benchmark is sensitive to the
+# exact torch/triton/vLLM build, so the reproducible pins live in requirements*.txt
+# and requirements_sglang.txt (serving env).
+# Core = the evaluation harness only.  Generation/repair is the optional `agent`
+# extra, so `pip install robust-kernelbench` never pulls vLLM/SGLang/OpenAI.
+dependencies = [
+    "numpy",
+    "torch",
+    "tqdm",
+    "pandas",
+    "datasets",
+    "ninja",
+    "pydantic>=2",
+]
+
+[project.optional-dependencies]
+# Agentic pipeline: prompting, multi-round orchestration, remote OpenAI-compatible
+# endpoints, and in-process vLLM/SGLang backends.
+agent = [
+    "transformers",
+    "openai",
+]
+vllm = ["vllm"]
+sglang = ["sglang"]
+# Backwards-compatible alias for the old extra name.
+serving = ["transformers", "openai"]
+# Post-hoc study pipeline (analysis/).
+analysis = [
+    "matplotlib",
+    "scipy",
+    "seaborn",
+]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+# Agentic entry point (generate -> compile -> evaluate).
+robust-kernelbench = "robust_kernelbench.agent.orchestrator:cli"
+# Evaluation/compile-only entry points, usable without the agent extra.
+robust-kernelbench-eval = "robust_kernelbench.evaluate_all:cli"
+robust-kernelbench-eval-single = "robust_kernelbench.evaluate_single:cli"
+robust-kernelbench-compile = "robust_kernelbench.compile_all:cli"
+robust-kernelbench-compile-sequential = "robust_kernelbench.compile_all_sequential:cli"
+robust-kernelbench-dataset = "robust_kernelbench.tasks:cli"
+
+[tool.setuptools.packages.find]
+include = ["robust_kernelbench*", "analysis*"]
+
+[tool.setuptools.package-data]
+robust_kernelbench = ["kb_prompts/*.py", "kb_prompts/*.toml", "kb_prompts/**/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "gpu: test requires a CUDA device (skipped automatically when unavailable)",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+# `kb_prompts/` contains prompt *templates*: .py files holding placeholder pseudo-code
+# that is rendered as text, never imported.  Linters/compileall must skip them.
+extend-exclude = ["robust_kernelbench/kb_prompts"]
+
+[tool.ruff.lint]
+# Pyflakes only: this catches real bugs (undefined names, unused imports, shadowed
+# redefinitions) without drowning the legacy modules in whitespace/style churn.  The
+# formatting rules can be enabled incrementally once the old files are reformatted.
+select = ["F", "E9"]
+ignore = [
+    "F541",  # f-string without placeholders (harmless, all over the legacy code)
+    "F401",  # unused import -- used deliberately for re-export facades
+    "F403",  # `from x import *`
+    "F405",  # name may be undefined, or defined from star imports
+    "F841",  # local variable assigned but never used (legacy debug leftovers)
+]

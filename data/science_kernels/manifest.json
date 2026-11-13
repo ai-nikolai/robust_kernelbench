@@ -1,0 +1,657 @@
+{
+  "name": "ScienceKernelBench",
+  "schema_version": "kernelbench-v1",
+  "dataset_version": "0.1.1",
+  "min_robust_kernelbench_version": "0.2.0",
+  "release_date": "2026-11-12",
+  "description": "Science-focused KernelBench tasks spanning physics, chemistry, biology, statistics, mathematics and economics.",
+  "levels": {
+    "level_1": "single stencil / reduction / short elementwise expression",
+    "level_2": "all-pairs interactions, batched linear algebra or multi-state updates",
+    "level_3": "sequential dynamic programs, FFTs or tree backward induction"
+  },
+  "splits": {
+    "level_1": {
+      "benchmark": true,
+      "task_count": 8
+    },
+    "level_2": {
+      "benchmark": true,
+      "task_count": 7
+    },
+    "level_3": {
+      "benchmark": true,
+      "task_count": 7
+    }
+  },
+  "tasks": [
+    {
+      "problem_id": 101,
+      "name": "pairwise_rbf",
+      "code_path": "kernels/level_1/0101_pairwise_rbf.py",
+      "level": 1,
+      "domain": "statistics",
+      "subdomain": "kernel methods",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "rbf",
+        "gaussian-process",
+        "distance"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Sch\u00f6lkopf & Smola, Learning with Kernels (2002)",
+          "Rasmussen & Williams, Gaussian Processes for Machine Learning (2006)"
+        ]
+      },
+      "task_key": "statistics.pairwise_rbf",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:75d713ec5c91c18718397262fc396ebb1b134c88ac1c36cf119b46800dbc3784"
+    },
+    {
+      "problem_id": 102,
+      "name": "laplacian_2d",
+      "code_path": "kernels/level_1/0102_laplacian_2d.py",
+      "level": 1,
+      "domain": "physics",
+      "subdomain": "numerical PDEs",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "stencil",
+        "laplacian",
+        "pde"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "LeVeque, Finite Difference Methods for ODEs and PDEs (2007)",
+          "Press et al., Numerical Recipes (2007)"
+        ]
+      },
+      "task_key": "physics.laplacian_2d",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:211fefee4e71a24062d139b47aa124beed98f2b6560bf5059330d79b6630ff2c"
+    },
+    {
+      "problem_id": 103,
+      "name": "heat_step_2d",
+      "code_path": "kernels/level_1/0103_heat_step_2d.py",
+      "level": 1,
+      "domain": "physics",
+      "subdomain": "computational physics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "heat-equation",
+        "diffusion",
+        "pde"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Fourier, Th\u00e9orie analytique de la chaleur (1822)",
+          "LeVeque (2007)"
+        ]
+      },
+      "task_key": "physics.heat_step_2d",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:c79695876d1b442c1b9c97547fbada1ef9f8b351befb8f068262bf9b9b4dec64"
+    },
+    {
+      "problem_id": 104,
+      "name": "lennard_jones_energy",
+      "code_path": "kernels/level_1/0104_lennard_jones_energy.py",
+      "level": 1,
+      "domain": "chemistry",
+      "subdomain": "molecular dynamics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "lennard-jones",
+        "potential-energy",
+        "md"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Lennard-Jones (1924)",
+          "Allen & Tildesley, Computer Simulation of Liquids (1987)"
+        ]
+      },
+      "task_key": "chemistry.lennard_jones_energy",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:fd51a04549d41e017487d4d33a0280993692d8475b3080e18ead80fd4c64261b"
+    },
+    {
+      "problem_id": 105,
+      "name": "lotka_volterra_step",
+      "code_path": "kernels/level_1/0105_lotka_volterra_step.py",
+      "level": 1,
+      "domain": "biology",
+      "subdomain": "population ecology",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "ode",
+        "predator-prey",
+        "rk4"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Lotka, Elements of Physical Biology (1925)",
+          "Volterra (1926)"
+        ]
+      },
+      "task_key": "biology.lotka_volterra_step",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:f377d3997ab136dbd90579d410f3d6899ac62f5a80940dab3112a7b198389816"
+    },
+    {
+      "problem_id": 106,
+      "name": "gaussian_kde",
+      "code_path": "kernels/level_1/0106_gaussian_kde.py",
+      "level": 1,
+      "domain": "statistics",
+      "subdomain": "density estimation",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "kde",
+        "gaussian",
+        "kernel"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Rosenblatt (1956)",
+          "Parzen (1962)"
+        ]
+      },
+      "task_key": "statistics.gaussian_kde",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:0603e3b94276410103aadab03db3ec89ce1b34672820871852ca0e7e2081abe2"
+    },
+    {
+      "problem_id": 107,
+      "name": "horner_eval",
+      "code_path": "kernels/level_1/0107_horner_eval.py",
+      "level": 1,
+      "domain": "mathematics",
+      "subdomain": "numerical methods",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "polynomial",
+        "horner",
+        "evaluation"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Horner (1819)",
+          "Higham, Accuracy and Stability of Numerical Algorithms (2002)"
+        ]
+      },
+      "task_key": "mathematics.horner_eval",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:04bb76c93f87a94f2772f6542c4ac3aac842f251ca5679598a568af21711cd64"
+    },
+    {
+      "problem_id": 108,
+      "name": "black_scholes_call",
+      "code_path": "kernels/level_1/0108_black_scholes_call.py",
+      "level": 1,
+      "domain": "economics",
+      "subdomain": "quantitative finance",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "option-pricing",
+        "black-scholes",
+        "finance"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Black & Scholes (1973)"
+        ]
+      },
+      "task_key": "economics.black_scholes_call",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:e77ae049b753a404fb6d29f922c037812c80f7a3e0365379039240474c45ceec"
+    },
+    {
+      "problem_id": 201,
+      "name": "nbody_acceleration",
+      "code_path": "kernels/level_2/0201_nbody_acceleration.py",
+      "level": 2,
+      "domain": "physics",
+      "subdomain": "astrophysics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "n-body",
+        "gravity",
+        "all-pairs"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Newton, Principia (1687)",
+          "Aarseth, Gravitational N-Body Simulations (2003)"
+        ]
+      },
+      "task_key": "physics.nbody_acceleration",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:428e4ddf584e8233c1ba67f8693ea1f77cdd63b6cb6ebeef469e4072ceba3d91"
+    },
+    {
+      "problem_id": 202,
+      "name": "coulomb_energy",
+      "code_path": "kernels/level_2/0202_coulomb_energy.py",
+      "level": 2,
+      "domain": "chemistry",
+      "subdomain": "electrostatics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "coulomb",
+        "electrostatics",
+        "all-pairs"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Coulomb (1785)",
+          "Frenkel & Smit, Understanding Molecular Simulation (2002)"
+        ]
+      },
+      "task_key": "chemistry.coulomb_energy",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:f1f2c0786a27be95c2212a056b7b74c17c7f8d4c8a98135edf72f7544e27ce48"
+    },
+    {
+      "problem_id": 203,
+      "name": "hodgkin_huxley_step",
+      "code_path": "kernels/level_2/0203_hodgkin_huxley_step.py",
+      "level": 2,
+      "domain": "biology",
+      "subdomain": "computational neuroscience",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "neuron",
+        "gating",
+        "ode"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Hodgkin & Huxley (1952)"
+        ]
+      },
+      "task_key": "biology.hodgkin_huxley_step",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:1365f3733a3a02229f5072afb438ca007e196f2cd566681647b3d62ee828bcd5"
+    },
+    {
+      "problem_id": 204,
+      "name": "kalman_update",
+      "code_path": "kernels/level_2/0204_kalman_update.py",
+      "level": 2,
+      "domain": "statistics",
+      "subdomain": "signal processing",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "kalman-filter",
+        "linear-algebra",
+        "control"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Kalman (1960)"
+        ]
+      },
+      "task_key": "statistics.kalman_update",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:b2e3a80365bd4a9e614ecd3943fe756f5b8849398f20ab5e02b79b746a9f6670"
+    },
+    {
+      "problem_id": 205,
+      "name": "graph_laplacian",
+      "code_path": "kernels/level_2/0205_graph_laplacian.py",
+      "level": 2,
+      "domain": "mathematics",
+      "subdomain": "spectral graph theory",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "graph",
+        "laplacian",
+        "linear-algebra"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Fiedler (1973)",
+          "Chung, Spectral Graph Theory (1997)"
+        ]
+      },
+      "task_key": "mathematics.graph_laplacian",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:74df270602ef20335a362f3b5827eb82a7579773705b4a4be37ebb4487dd1d37"
+    },
+    {
+      "problem_id": 206,
+      "name": "portfolio_variance",
+      "code_path": "kernels/level_2/0206_portfolio_variance.py",
+      "level": 2,
+      "domain": "economics",
+      "subdomain": "portfolio theory",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "finance",
+        "covariance",
+        "quadratic-form"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Markowitz (1952)"
+        ]
+      },
+      "task_key": "economics.portfolio_variance",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:1193cc4e8f004632d2936d51dc699c80ea77362df2a059ec2f36f0b278c2497c"
+    },
+    {
+      "problem_id": 301,
+      "name": "needleman_wunsch_score",
+      "code_path": "kernels/level_3/0301_needleman_wunsch_score.py",
+      "level": 3,
+      "domain": "biology",
+      "subdomain": "bioinformatics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "sequence-alignment",
+        "dynamic-programming"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Needleman & Wunsch (1970)"
+        ]
+      },
+      "task_key": "biology.needleman_wunsch_score",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:9e20f9f2449fe5ccb936e5d68666c8e716c516df946f57d56b741fcd916895be"
+    },
+    {
+      "problem_id": 302,
+      "name": "fft_convolution",
+      "code_path": "kernels/level_3/0302_fft_convolution.py",
+      "level": 3,
+      "domain": "mathematics",
+      "subdomain": "signal processing",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "fft",
+        "convolution",
+        "spectral"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Cooley & Tukey (1965)"
+        ]
+      },
+      "task_key": "mathematics.fft_convolution",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:95b39d22499af243596f6ecd9c85d879527541e1c88dd034121949198e48acc1"
+    },
+    {
+      "problem_id": 303,
+      "name": "binomial_option_crr",
+      "code_path": "kernels/level_3/0303_binomial_option_crr.py",
+      "level": 3,
+      "domain": "economics",
+      "subdomain": "quantitative finance",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "option-pricing",
+        "binomial-tree",
+        "crr"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Cox, Ross & Rubinstein (1979)"
+        ]
+      },
+      "task_key": "economics.binomial_option_crr",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:b3b2c22fa7d649ed697cce8b398633308f8203a05f003d0661e928bb0a3df4b4"
+    },
+    {
+      "problem_id": 207,
+      "name": "wave_step_2d",
+      "code_path": "kernels/level_2/0207_wave_step_2d.py",
+      "level": 2,
+      "domain": "physics",
+      "subdomain": "numerical PDEs",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "wave-equation",
+        "leapfrog",
+        "pde"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "LeVeque, Finite Difference Methods for ODEs and PDEs (2007)"
+        ]
+      },
+      "task_key": "physics.wave_step_2d",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:4df864d60b9fe345b3a3e58eed1f9eac027e54500b9477b71eb751b226488d06"
+    },
+    {
+      "problem_id": 304,
+      "name": "split_step_schrodinger",
+      "code_path": "kernels/level_3/0304_split_step_schrodinger.py",
+      "level": 3,
+      "domain": "physics",
+      "subdomain": "quantum mechanics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "schrodinger",
+        "split-step",
+        "fft"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Feit, Fleck & Steiger (1982)",
+          "Strang splitting (1968)"
+        ]
+      },
+      "task_key": "physics.split_step_schrodinger",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:64fe4db96ba6c2d706eddd5dda14dde016042ddeaa9d746c3090bd2a4d1e4f3d"
+    },
+    {
+      "problem_id": 305,
+      "name": "ewald_real_space",
+      "code_path": "kernels/level_3/0305_ewald_real_space.py",
+      "level": 3,
+      "domain": "chemistry",
+      "subdomain": "electrostatics",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "ewald",
+        "periodic",
+        "all-pairs"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Ewald (1921)",
+          "Frenkel & Smit, Understanding Molecular Simulation (2002)"
+        ]
+      },
+      "task_key": "chemistry.ewald_real_space",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:50153b0e6a6d17722c3b0341c857189ecda814eec575fb2b12cd9600ffcc2e9e"
+    },
+    {
+      "problem_id": 306,
+      "name": "gaussian_process_posterior",
+      "code_path": "kernels/level_3/0306_gaussian_process_posterior.py",
+      "level": 3,
+      "domain": "statistics",
+      "subdomain": "Bayesian machine learning",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "gaussian-process",
+        "kernel",
+        "linear-solve"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Rasmussen & Williams, Gaussian Processes for Machine Learning (2006)"
+        ]
+      },
+      "task_key": "statistics.gaussian_process_posterior",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:46e833bf202cc58a5284645dc2ea9bd539ab72c8be2a102fdb0ce1277a5f0fc9"
+    },
+    {
+      "problem_id": 307,
+      "name": "floyd_warshall",
+      "code_path": "kernels/level_3/0307_floyd_warshall.py",
+      "level": 3,
+      "domain": "mathematics",
+      "subdomain": "graph algorithms",
+      "task_type": "pytorch_reference",
+      "backend": "cuda",
+      "precision": "fp32",
+      "filter": true,
+      "tags": [
+        "shortest-path",
+        "dynamic-programming",
+        "graph"
+      ],
+      "source": {
+        "origin": "original reference implementation",
+        "license": "AGPL-3.0",
+        "references": [
+          "Floyd (1962)",
+          "Warshall (1962)"
+        ]
+      },
+      "task_key": "mathematics.floyd_warshall",
+      "task_version": 1,
+      "status": "active",
+      "reference_hash": "sha256:a2df62be34764839e31692972ba093745fe5ac58b8c5e8f3f9998197d4124dd3"
+    }
+  ]
+}

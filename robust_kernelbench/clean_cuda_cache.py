@@ -1,5 +1,8 @@
+import logging
 import os
 import shutil
+
+logger = logging.getLogger(__name__)
 
 
 def clean_manually(cache_dir):
@@ -16,6 +19,16 @@ def clean_manually(cache_dir):
 
 
 def remove_locks(cache_dir,remove=True):
+    """Remove stale ninja `lock` files left behind by interrupted compilations.
+
+    A missing cache directory simply means there is nothing to clean yet (e.g. the very
+    first round of a fresh experiment); that used to raise FileNotFoundError and make the
+    orchestrator log a spurious failure before every compile.
+    """
+    if not os.path.isdir(cache_dir):
+        logger.info("no cache directory to clean at %s (nothing to do)", cache_dir)
+        return 0
+
     count = 0
     for folder in os.listdir(cache_dir):
         lock_path = os.path.join(cache_dir,folder,"lock")
@@ -26,6 +39,8 @@ def remove_locks(cache_dir,remove=True):
                 os.remove(lock_path)
         elif "solution_kernel" in folder:
             new_folder_path = os.path.join(cache_dir, folder)
+            if not os.path.isdir(new_folder_path):
+                continue
             for sub_folder in os.listdir(new_folder_path):
                 lock_path2 = os.path.join(new_folder_path,sub_folder,"lock")
                 if os.path.exists(lock_path2):
@@ -35,6 +50,7 @@ def remove_locks(cache_dir,remove=True):
                         os.remove(lock_path2) 
 
     print(f"Lock cleaning finished. Found: {count} locks. We have removed them: {remove}")
+    return count
 
 
 def get_args():

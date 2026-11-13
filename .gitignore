@@ -20,6 +20,11 @@ config.yaml
 history.json
 
 __pycache__
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
 experiments_backup/
 experiments_backup2/
 experiments_backup3/
@@ -29,6 +34,11 @@ experiments_backup*.zip
 experiments_all*.zip
 
 *.tex
+
+.mini
+CURRENT_GOAL.md
+CURRENT_PLAN.md 
+server.log
 
 .ninja_deps
 .ninja_log
@@ -42,10 +52,10 @@ matmul_op.so
 out.txt
 output.txt
 
-robust_kernelbench/tmp.py
-
 logs/*
 
 sglang_benchmark_*
 
 test.csv
+# generated Hugging Face exports
+data/*/hf_export/

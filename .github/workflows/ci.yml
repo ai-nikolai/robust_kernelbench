@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: py${{ matrix.python-version }} / cpu
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install CPU-only torch
+        # Pull torch from the CPU wheel index so CI does not download ~2 GB of CUDA libs.
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+
+      - name: Install the project
+        # `analysis` brings matplotlib/scipy/seaborn so the post-hoc pipeline is
+        # importable in CI (it is an optional extra, not a core dependency).
+        run: pip install -e ".[dev,analysis]"
+
+      - name: Byte-compile everything
+        # `kb_prompts/` holds *prompt templates* (placeholder pseudo-code in .py files),
+        # not importable modules, so it is excluded from compilation.
+        run: python -m compileall -q robust_kernelbench analysis tests conftest.py -x 'kb_prompts'
+
+      - name: Lint (ruff)
+        run: ruff check robust_kernelbench analysis tests conftest.py
+
+      - name: Shell scripts are syntactically valid
+        run: |
+          for script in scripts/*.sh; do
+            echo "bash -n ${script}"
+            bash -n "${script}"
+          done
+
+      - name: CLI entry points respond to --help
+        run: |
+          python -m robust_kernelbench.run_main --help > /dev/null
+          robust-kernelbench --help > /dev/null
+          robust-kernelbench-eval --help > /dev/null
+          robust-kernelbench-eval-single --help > /dev/null
+          robust-kernelbench-compile --help > /dev/null
+          robust-kernelbench-compile-sequential --help > /dev/null
+          robust-kernelbench-dataset --help > /dev/null
+          python -m robust_kernelbench.evaluate_single --help > /dev/null
+          python -m robust_kernelbench.compile_all --help > /dev/null
+          python -m robust_kernelbench.run_inference_test_time_scaling --help > /dev/null
+          python -m analysis.run_analysis_summary_clean --help > /dev/null
+          python -m analysis.run_analysis_statistical --help > /dev/null
+          python -m analysis.run_analysis_plotting --help > /dev/null
+
+      - name: Validate the bundled science dataset
+        run: |
+          robust-kernelbench-dataset validate \
+            --dataset_path data/science_kernels \
+            --dataset_format directory
+
+      - name: Analysis modules import cleanly
+        # Importing must not read a CSV or parse argv: run_analysis_plotting used to
+        # do both at module level, which made the module unimportable.
+        run: |
+          python -c "import analysis, analysis.utils, analysis.run_analysis_summary_clean, analysis.run_analysis_statistical, analysis.run_analysis_plotting"
+          python -c "import robust_kernelbench.agent.orchestrator, robust_kernelbench.agent.inference_common, robust_kernelbench.agent.prompt_common, robust_kernelbench.agent.prompts_v2"
+
+      - name: Run the test suite
+        # GPU-marked tests skip automatically on a CPU runner (see conftest.py).
+        run: pytest -q -rs
+
+  no-gpu-contract:
+    name: no-job usage error
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -e ".[dev]"
+      - name: The pipeline must fail cleanly when no jobs are given
+        run: |
+          set +e
+          python -m robust_kernelbench.run_main > /tmp/out.txt 2>&1
+          status=$?
+          cat /tmp/out.txt
+          if [ "${status}" -ne 2 ]; then
+            echo "expected exit code 2, got ${status}" >&2
+            exit 1
+          fi
+          grep -q "no jobs supplied" /tmp/out.txt
